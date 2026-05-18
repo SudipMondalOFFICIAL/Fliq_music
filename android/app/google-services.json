@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "630847282007",
+    "project_id": "fliq-44ed1",
+    "storage_bucket": "fliq-44ed1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:630847282007:android:ec608b3ed9148abecc7c12",
+        "android_client_info": {
+          "package_name": "com.fliq.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "630847282007-l543ngkq1104m2vqf13qn984v35nluvv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fliq.app",
+            "certificate_hash": "304b7c5049da070a45456f9b603f5f180615f30a"
+          }
+        },
+        {
+          "client_id": "630847282007-ivvsvmbtejafq0ftr5tus9i40boojqv7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDrbvGOodYTcRBo358Bu4qSx3LmsTTTs3Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "630847282007-ivvsvmbtejafq0ftr5tus9i40boojqv7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
