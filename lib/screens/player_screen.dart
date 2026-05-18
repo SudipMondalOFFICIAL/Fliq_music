@@ -6,7 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/track_model.dart';
 import '../providers/player_provider.dart';
-import 'track_tile.dart';
+// FIX: track_tile.dart is in widgets/, not screens/ — corrected import path
+import '../widgets/track_tile.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({Key? key}) : super(key: key);

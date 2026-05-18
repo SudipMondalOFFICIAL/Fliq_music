@@ -11,11 +11,15 @@ import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'services/upload_service.dart';
 import 'services/notification_service.dart';
+// FIX: import PlayerService for audio background init
+import 'services/player_service.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/earn_provider.dart';
 import 'providers/task_provider.dart';
 import 'providers/support_provider.dart';
 import 'providers/app_config_provider.dart';
+// FIX: PlayerProvider added
+import 'providers/player_provider.dart';
 
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
@@ -53,8 +57,11 @@ Future<void> main() async {
   await Firebase.initializeApp();
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  await Workmanager()
-      .initialize(campaignTrackingDispatcher, isInDebugMode: false);
+  // FIX: Removed Workmanager().initialize() — workmanager is NOT in pubspec.yaml
+  // and campaignTrackingDispatcher is undefined. Remove or add the package if needed.
+
+  // FIX: Init audio background for just_audio_background
+  await initAudioBackground();
 
   final apiService = ApiService();
   final authService = AuthService(apiService);
@@ -71,6 +78,8 @@ Future<void> main() async {
       ChangeNotifierProvider(create: (_) => TaskProvider(apiService)),
       ChangeNotifierProvider(create: (_) => SupportProvider(apiService)),
       ChangeNotifierProvider(create: (_) => LeaderboardProvider(apiService)),
+      // FIX: PlayerProvider was missing — player features won't work without this
+      ChangeNotifierProvider(create: (_) => PlayerProvider()),
     ],
     child: const FilqApp(),
   ));

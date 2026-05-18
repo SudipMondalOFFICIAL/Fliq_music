@@ -30,6 +30,8 @@ class ApiConfig {
 
   // ── Leaderboard ───────────────────────────────────────────────
   static const String referralLeaderboardEndpoint = "/leaderboard/referral";
+  // FIX: offerwallLeaderboardEndpoint was missing — used in api_service.dart line 387
+  static const String offerwallLeaderboardEndpoint = "/leaderboard/offerwall";
   static const String watchLeaderboardEndpoint = "/leaderboard/watch";
   static const String leaderboardMyRankEndpoint = "/leaderboard/my-rank";
   static const String watchMyRankEndpoint = "/leaderboard/watch/my-rank";
@@ -122,16 +124,13 @@ class ApiConfig {
 
   static String musicFeedUrl({int page = 1}) {
     return Uri.parse('$baseUrl$musicFeedEndpoint')
-        .replace(queryParameters: {'page': page.toString()})
-        .toString();
+        .replace(queryParameters: {'page': page.toString()}).toString();
   }
 
   static String musicHistoryUrl({int limit = 30, int offset = 0}) {
-    return Uri.parse('$baseUrl$musicHistoryEndpoint')
-        .replace(queryParameters: {
-          'limit': limit.toString(),
-          'offset': offset.toString(),
-        })
-        .toString();
+    return Uri.parse('$baseUrl$musicHistoryEndpoint').replace(queryParameters: {
+      'limit': limit.toString(),
+      'offset': offset.toString(),
+    }).toString();
   }
 }
