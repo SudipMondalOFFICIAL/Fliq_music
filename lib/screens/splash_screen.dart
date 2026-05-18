@@ -76,7 +76,11 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _start() async {
     try {
       final cfg = context.read<AppConfigProvider>();
-      await cfg.load();
+      // timeout: Render cold start বা slow network এ stuck হবে না
+      await cfg.load().timeout(
+            const Duration(seconds: 6),
+            onTimeout: () {},
+          );
       if (mounted) {
         setState(() {
           _cfg = cfg.splashConfig;
