@@ -12,10 +12,10 @@
     <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
     <!-- POST_NOTIFICATIONS: required for Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- FOREGROUND_SERVICE: required by WorkManager on Android 9+ -->
+    <!-- FOREGROUND_SERVICE: required by just_audio_background on Android 9+ -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <!-- FOREGROUND_SERVICE_DATA_SYNC: required for Android 14+ foreground service type -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <!-- FOREGROUND_SERVICE_MEDIA_PLAYBACK: required for Android 14+ audio foreground service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
 
     <application
         android:label="Filq"
@@ -58,11 +58,22 @@
             </intent-filter>
         </service>
 
-        <!-- ── WorkManager foreground service (required by workmanager pkg) ─ -->
+        <!-- ── just_audio_background foreground service ─────────────────────── -->
         <service
-            android:name="androidx.work.impl.foreground.SystemForegroundService"
-            android:foregroundServiceType="dataSync"
-            tools:node="merge"/>
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true"
+            tools:node="merge">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService"/>
+            </intent-filter>
+        </service>
+        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON"/>
+            </intent-filter>
+        </receiver>
 
         <!-- ── FCM default channel (Android 8+) ──────────────────────────── -->
         <meta-data

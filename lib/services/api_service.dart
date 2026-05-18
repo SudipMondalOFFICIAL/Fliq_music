@@ -1,10 +1,3 @@
-// ╔══════════════════════════════════════════════════════════════════╗
-// ║           api_service.dart — Filq API Client                    ║
-// ║  Fix v4: GameProvider dependency removed                        ║
-// ║           Leaderboard endpoints added (referral + offerwall)    ║
-// ║           Music endpoints added for video search & streaming    ║
-// ╚══════════════════════════════════════════════════════════════════╝
-
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../constants/api_config.dart';

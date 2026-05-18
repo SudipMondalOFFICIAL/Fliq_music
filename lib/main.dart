@@ -34,6 +34,7 @@ import 'screens/tasks_screen.dart';
 import 'screens/earn_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/history_screen.dart';
+import 'screens/media_screen.dart';
 
 import 'screens/leaderboard_screen.dart';
 
@@ -140,6 +141,7 @@ class _FilqAppState extends State<FilqApp> {
         '/profile': (_) => const ProfileScreen(),
         '/history': (_) => const HistoryScreen(),
         '/leaderboard': (_) => const LeaderboardScreen(),
+        '/media': (_) => const MediaScreen(),
       },
     );
   }

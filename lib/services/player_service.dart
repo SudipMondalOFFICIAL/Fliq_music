@@ -135,8 +135,13 @@ class PlayerService {
 
   Future<void> seekRelative(Duration offset) async {
     final current = _player.position;
-    final duration = _player.duration ?? Duration.zero;
-    final target = (current + offset).clamp(Duration.zero, duration);
+    final total = _player.duration ?? Duration.zero;
+    final raw = current + offset;
+    final target = raw < Duration.zero
+        ? Duration.zero
+        : raw > total
+            ? total
+            : raw;
     await _player.seek(target);
   }
 
