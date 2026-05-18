@@ -9,7 +9,6 @@ import '../providers/earn_provider.dart';
 import '../providers/wallet_provider.dart';
 import '../providers/app_config_provider.dart';
 import '../widgets/banner_carousel.dart';
-import 'offerwall_task_detail_screen.dart';
 
 class EarnScreen extends StatefulWidget {
   const EarnScreen({Key? key}) : super(key: key);
