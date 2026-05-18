@@ -288,16 +288,7 @@ class ApiService {
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> logAdView(
-      {String adType = 'rewarded', String network = 'ironsource'}) async {
-    final r = await _httpClient.post(
-      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.adViewEndpoint}'),
-      headers: _headers(),
-      body: jsonEncode({'ad_type': adType, 'network': network}),
-    );
-    _check(r, 'Ad view log failed');
-    return jsonDecode(r.body) as Map<String, dynamic>;
-  }
+  // Watch Ads removed
 
   // ══════════════════════════════════════════════════════════════
   //  PROMO
@@ -380,16 +371,7 @@ class ApiService {
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
 
-  /// GET /leaderboard/offerwall → { leaderboard: [...] }
-  Future<Map<String, dynamic>> getOfferwallLeaderboard() async {
-    final r = await _httpClient.get(
-      Uri.parse(
-          '${ApiConfig.baseUrl}${ApiConfig.offerwallLeaderboardEndpoint}'),
-      headers: _headers(),
-    );
-    _check(r, 'Get offerwall leaderboard failed');
-    return jsonDecode(r.body) as Map<String, dynamic>;
-  }
+  /// GET /leaderboard/offerwall removed
 
   /// GET /leaderboard/my-rank → { referral_rank, total_referrals }
   Future<Map<String, dynamic>> getLeaderboardMyRank() async {
@@ -548,56 +530,7 @@ class ApiService {
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
 
-  // ══════════════════════════════════════════════════════════════
-  //  OFFERWALL MANUAL TASKS
-  // ══════════════════════════════════════════════════════════════
-
-  Future<List<Map<String, dynamic>>> getOfferwallTasks() async {
-    final r = await _httpClient.get(
-      Uri.parse('${ApiConfig.baseUrl}/offerwall/tasks'),
-      headers: _headers(),
-    );
-    _check(r, 'Get offerwall tasks failed');
-    final List<dynamic> data = jsonDecode(r.body);
-    return data.cast<Map<String, dynamic>>();
-  }
-
-  Future<Map<String, dynamic>> getOfferwallTask(String taskId) async {
-    final r = await _httpClient.get(
-      Uri.parse('${ApiConfig.baseUrl}/offerwall/tasks/$taskId'),
-      headers: _headers(),
-    );
-    _check(r, 'Get task failed');
-    return jsonDecode(r.body) as Map<String, dynamic>;
-  }
-
-  Future<Map<String, dynamic>> submitOfferwallTask({
-    required String taskId,
-    required String screenshotUrl,
-    String screenshotPublicId = '',
-  }) async {
-    final r = await _httpClient.post(
-      Uri.parse('${ApiConfig.baseUrl}/offerwall/tasks/$taskId/submit'),
-      headers: _headers(),
-      body: jsonEncode({
-        'task_id': taskId,
-        'screenshot_url': screenshotUrl,
-        'screenshot_public_id': screenshotPublicId,
-      }),
-    );
-    _check(r, 'Submission failed');
-    return jsonDecode(r.body) as Map<String, dynamic>;
-  }
-
-  Future<List<Map<String, dynamic>>> getMyOfferwallSubmissions() async {
-    final r = await _httpClient.get(
-      Uri.parse('${ApiConfig.baseUrl}/offerwall/submissions/me'),
-      headers: _headers(),
-    );
-    _check(r, 'Get submissions failed');
-    final List<dynamic> data = jsonDecode(r.body);
-    return data.cast<Map<String, dynamic>>();
-  }
+  // Offerwall removed
 
   // ══════════════════════════════════════════════════════════════
   //  CONFIG

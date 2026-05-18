@@ -30,8 +30,8 @@ class ApiConfig {
 
   // ── Leaderboard ───────────────────────────────────────────────
   static const String referralLeaderboardEndpoint = "/leaderboard/referral";
-  // FIX: offerwallLeaderboardEndpoint was missing — used in api_service.dart line 387
-  static const String offerwallLeaderboardEndpoint = "/leaderboard/offerwall";
+  // Watch Ads removed — adViewEndpoint deleted
+  // Offerwall removed — offerwallLeaderboardEndpoint deleted
   static const String watchLeaderboardEndpoint = "/leaderboard/watch";
   static const String leaderboardMyRankEndpoint = "/leaderboard/my-rank";
   static const String watchMyRankEndpoint = "/leaderboard/watch/my-rank";

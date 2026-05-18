@@ -10,7 +10,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'track_model.dart';
+import '../models/track_model.dart'; // FIX: was 'track_model.dart' (wrong path)
 
 // ── Init (call once in main.dart before runApp) ───────────────────
 Future<void> initAudioBackground() async {
@@ -40,10 +40,10 @@ class PlayerService {
   Future<String?> getAudioStreamUrl(String videoId) async {
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(videoId);
-      // Prefer audio-only stream, highest bitrate
-      final streams = manifest.audioOnly.sortByBitrate();
+      // FIX: youtube_explode_dart 2.x API — use withHighestBitrate()
+      final streams = manifest.audioOnly;
       if (streams.isEmpty) return null;
-      return streams.last.url.toString();
+      return streams.withHighestBitrate().url.toString();
     } catch (e) {
       print('[PlayerService] stream fetch error: $e');
       return null;
@@ -53,10 +53,13 @@ class PlayerService {
   Future<String?> getVideoStreamUrl(String videoId) async {
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(videoId);
-      // muxed = video + audio combined
-      final streams = manifest.muxed.sortByVideoQuality();
+      // FIX: muxed streams — use withHighestBitrate() or last by quality
+      final streams = manifest.muxed;
       if (streams.isEmpty) return null;
-      return streams.last.url.toString();
+      // Sort by video quality descending, take highest
+      final sorted = streams.toList()
+        ..sort((a, b) => b.videoQuality.index.compareTo(a.videoQuality.index));
+      return sorted.first.url.toString();
     } catch (e) {
       print('[PlayerService] video stream error: $e');
       return null;
@@ -100,15 +103,13 @@ class PlayerService {
     }
   }
 
-  // ── Play queue (ConcatenatingAudioSource) ────────────────────
+  // ── Play queue ────────────────────────────────────────────────
   Future<bool> playQueue(
     List<Track> tracks,
     int initialIndex, {
     bool isVideo = false,
   }) async {
     try {
-      // Fetch URLs for all tracks (can be slow for large queues)
-      // For now: lazy — only fetch current, preload next
       final track = tracks[initialIndex];
       return await playTrack(track, isVideo: isVideo);
     } catch (e) {
@@ -122,9 +123,8 @@ class PlayerService {
         title: t.title,
         artist: t.channel,
         artUri: Uri.parse(t.thumbnail),
-        duration: t.durationSeconds > 0
-            ? Duration(seconds: t.durationSeconds)
-            : null,
+        duration:
+            t.durationSeconds > 0 ? Duration(seconds: t.durationSeconds) : null,
       );
 
   // ── Playback controls ────────────────────────────────────────
@@ -160,12 +160,10 @@ class PlayerService {
     void Function(double)? onProgress,
   }) async {
     try {
-      // Permission check
       if (Platform.isAndroid) {
         final status = await Permission.storage.request();
         if (!status.isGranted) {
-          final manageStatus =
-              await Permission.manageExternalStorage.request();
+          final manageStatus = await Permission.manageExternalStorage.request();
           if (!manageStatus.isGranted) return null;
         }
       }
@@ -176,10 +174,8 @@ class PlayerService {
 
       final filePath = '${filqDir.path}/${track.ytVideoId}.m4a';
 
-      // Already downloaded?
       if (File(filePath).existsSync()) return filePath;
 
-      // Fetch audio stream URL
       final url = await getAudioStreamUrl(track.ytVideoId);
       if (url == null) return null;
 

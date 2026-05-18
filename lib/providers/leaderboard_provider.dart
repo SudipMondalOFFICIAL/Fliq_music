@@ -1,6 +1,3 @@
-// providers/leaderboard_provider.dart
-// GameProvider replace করে — referral leaderboard + watch leaderboard + my rank
-
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 

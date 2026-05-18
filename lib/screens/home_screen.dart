@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/wallet_provider.dart';
-import '../providers/earn_provider.dart';
 import '../providers/task_provider.dart';
 import '../providers/app_config_provider.dart';
 import '../providers/leaderboard_provider.dart';
@@ -36,11 +35,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadAll() async {
     await Future.wait([
       context.read<WalletProvider>().loadBalance(),
-      context.read<EarnProvider>().loadStats(),
       context.read<TaskProvider>().loadTasks(),
       context.read<AppConfigProvider>().load(),
     ]);
-    // referral rank load (non-blocking)
     context.read<LeaderboardProvider>().loadMyRank();
   }
 
@@ -192,7 +189,6 @@ class _DashboardPageState extends State<_DashboardPage> {
         onRefresh: () async {
           await Future.wait([
             context.read<WalletProvider>().loadBalance(),
-            context.read<EarnProvider>().loadStats(),
             context.read<TaskProvider>().loadTasks(),
             context.read<AppConfigProvider>().load(),
           ]);
@@ -601,13 +597,13 @@ class _DashboardPageState extends State<_DashboardPage> {
 
   // ── Stats Row ─────────────────────────────────────────────────
   Widget _statsRow() {
-    return Consumer2<EarnProvider, TaskProvider>(
-      builder: (_, earn, tasks, __) => Row(children: [
-        _statCard('Ads Today', '${earn.adsToday}/${earn.dailyAdLimit}',
-            Icons.play_circle_outline_rounded, _lime),
-        const SizedBox(width: 8),
+    return Consumer<TaskProvider>(
+      builder: (_, tasks, __) => Row(children: [
         _statCard('Tasks Done', '${tasks.completedCount}/${tasks.tasks.length}',
             Icons.check_box_outlined, _teal),
+        const SizedBox(width: 8),
+        _statCard('Coins Available', '+${tasks.totalCoinsAvailable}',
+            Icons.stars_rounded, _lime),
       ]),
     );
   }
@@ -652,14 +648,14 @@ class _DashboardPageState extends State<_DashboardPage> {
               color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
       const SizedBox(height: 8),
       Row(children: [
-        _actionBtn('Watch', Icons.play_circle_outline_rounded, _lime,
-            () => widget.onSwitchTab(1)),
-        const SizedBox(width: 7),
-        _actionBtn('Offerwall', Icons.grid_view_rounded, _teal,
-            () => widget.onSwitchTab(1)),
+        _actionBtn(
+            'Earn', Icons.stars_rounded, _lime, () => widget.onSwitchTab(1)),
         const SizedBox(width: 7),
         _actionBtn('Tasks', Icons.task_alt_rounded, _orange,
             () => Navigator.pushNamed(context, '/tasks')),
+        const SizedBox(width: 7),
+        _actionBtn('Refer', Icons.card_giftcard_outlined, _teal,
+            () => widget.onSwitchTab(2)),
         const SizedBox(width: 7),
         _actionBtn('Withdraw', Icons.account_balance_wallet_outlined, _purple,
             () => widget.onSwitchTab(3)),

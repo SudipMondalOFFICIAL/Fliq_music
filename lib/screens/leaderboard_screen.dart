@@ -1,14 +1,11 @@
 // screens/leaderboard_screen.dart
-// Game features সম্পূর্ণ removed
-// Tabs: 👥 Refer Board | 📋 Task Board
-// GameProvider dependency নেই — LeaderboardProvider use করে
+// Tabs: 👥 Refer Board | ⏱ Watch Board
+// Offerwall removed — Watch leaderboard replaces it
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/leaderboard_provider.dart';
-import '../providers/earn_provider.dart';
 
-// ── Standalone Route ──────────────────────────────────────────────
 class LeaderboardScreen extends StatelessWidget {
   const LeaderboardScreen({Key? key}) : super(key: key);
 
@@ -23,7 +20,6 @@ class LeaderboardScreen extends StatelessWidget {
   }
 }
 
-// ── Embeddable Body ───────────────────────────────────────────────
 class LeaderboardBody extends StatefulWidget {
   const LeaderboardBody({Key? key}) : super(key: key);
 
@@ -40,7 +36,7 @@ class _LeaderboardBodyState extends State<LeaderboardBody>
 
   late TabController _tab;
   bool _loadedReferral = false;
-  bool _loadedOfferwall = false;
+  bool _loadedWatch = false;
 
   @override
   void initState() {
@@ -49,7 +45,7 @@ class _LeaderboardBodyState extends State<LeaderboardBody>
     _tab.addListener(() {
       if (_tab.indexIsChanging) return;
       if (_tab.index == 0 && !_loadedReferral) _loadReferral();
-      if (_tab.index == 1 && !_loadedOfferwall) _loadOfferwall();
+      if (_tab.index == 1 && !_loadedWatch) _loadWatch();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<LeaderboardProvider>().loadMyRank();
@@ -68,9 +64,9 @@ class _LeaderboardBodyState extends State<LeaderboardBody>
     if (mounted) setState(() => _loadedReferral = true);
   }
 
-  Future<void> _loadOfferwall() async {
-    await context.read<EarnProvider>().loadOfferwallLeaderboard();
-    if (mounted) setState(() => _loadedOfferwall = true);
+  Future<void> _loadWatch() async {
+    await context.read<LeaderboardProvider>().loadWatchLeaderboard();
+    if (mounted) setState(() => _loadedWatch = true);
   }
 
   @override
@@ -86,7 +82,7 @@ class _LeaderboardBodyState extends State<LeaderboardBody>
             controller: _tab,
             children: [
               _ReferralLeaderboardList(onRefresh: _loadReferral),
-              _OfferwallLeaderboardList(onRefresh: _loadOfferwall),
+              _WatchLeaderboardList(onRefresh: _loadWatch),
             ],
           ),
         ),
@@ -173,7 +169,7 @@ class _LeaderboardBodyState extends State<LeaderboardBody>
           overlayColor: MaterialStateProperty.all(Colors.transparent),
           tabs: const [
             Tab(text: '👥 Refer Board'),
-            Tab(text: '📋 Task Board'),
+            Tab(text: '⏱ Watch Board'),
           ],
         ),
       ),
@@ -230,26 +226,26 @@ class _ReferralLeaderboardList extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  Offerwall Task Leaderboard
+//  Watch Leaderboard
 // ══════════════════════════════════════════════════════════════════
-class _OfferwallLeaderboardList extends StatelessWidget {
+class _WatchLeaderboardList extends StatelessWidget {
   final Future<void> Function() onRefresh;
-  const _OfferwallLeaderboardList({required this.onRefresh});
+  const _WatchLeaderboardList({required this.onRefresh});
 
   static const _card = Color(0xFF141414);
   static const _lime = Color(0xFFE8FF6B);
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<EarnProvider>(
-      builder: (_, earn, __) {
-        if (earn.offerwallLeaderboardLoading) {
+    return Consumer<LeaderboardProvider>(
+      builder: (_, lp, __) {
+        if (lp.watchLoading) {
           return const Center(
               child: CircularProgressIndicator(color: _lime, strokeWidth: 2));
         }
-        final list = earn.offerwallLeaderboard;
+        final list = lp.watchLeaderboard;
         if (list.isEmpty) {
-          return _emptyState('No task completions yet', onRefresh);
+          return _emptyState('No watch history yet', onRefresh);
         }
         return RefreshIndicator(
           color: _lime,
@@ -259,15 +255,16 @@ class _OfferwallLeaderboardList extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             itemCount: list.length + 1,
             itemBuilder: (_, i) {
-              if (i == 0) return _taskInfo();
+              if (i == 0) return _watchInfo();
               final entry = list[i - 1];
+              final mins = entry['watch_minutes'] as int? ?? 0;
               return _EntryTile(
                 rank: entry['rank'] as int? ?? i,
                 name: entry['name'] as String? ?? '',
                 username: entry['username'] as String? ?? '',
                 avatarUrl: entry['avatar_url'] as String? ?? '',
-                primaryValue: '${entry['completed_tasks'] ?? 0} tasks',
-                secondaryValue: '${entry['total_coins'] ?? 0} coins',
+                primaryValue: '$mins min watched',
+                secondaryValue: null,
               );
             },
           ),
@@ -276,7 +273,7 @@ class _OfferwallLeaderboardList extends StatelessWidget {
     );
   }
 
-  Widget _taskInfo() {
+  Widget _watchInfo() {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -286,18 +283,18 @@ class _OfferwallLeaderboardList extends StatelessWidget {
         border: Border.all(color: const Color(0xFFE8FF6B).withOpacity(0.2)),
       ),
       child: const Row(children: [
-        Text('📋', style: TextStyle(fontSize: 20)),
+        Text('⏱', style: TextStyle(fontSize: 20)),
         SizedBox(width: 10),
         Expanded(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Complete tasks to rank up!',
+            Text('Watch more to rank up!',
                 style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
                     fontSize: 13)),
             SizedBox(height: 2),
-            Text('Most approved tasks wins',
+            Text('Most watch time wins',
                 style: TextStyle(color: Color(0xFF555555), fontSize: 11)),
           ]),
         ),
@@ -353,7 +350,6 @@ Widget _emptyState(String msg, Future<void> Function() onRefresh) {
   );
 }
 
-// ── Unified Entry Tile ────────────────────────────────────────────
 class _EntryTile extends StatelessWidget {
   final int rank;
   final String name;

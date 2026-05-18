@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/app_banner.dart';
-import '../screens/offerwall_task_detail_screen.dart';
 import '../screens/referral_screen.dart';
 import '../screens/withdraw_screen.dart';
 
@@ -122,19 +121,7 @@ class AppDeepLink {
       if (uri == null) return;
 
       switch (uri.host) {
-        // filq://offerwall/TASK_ID
-        case 'offerwall':
-          final taskId =
-              uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
-          if (taskId != null && taskId.isNotEmpty) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => OfferwallTaskDetailScreen(taskId: taskId),
-              ),
-            );
-          }
-          break;
+        // filq://offerwall removed
 
         // filq://referral
         case 'referral':

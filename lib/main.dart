@@ -18,6 +18,7 @@ import 'providers/earn_provider.dart';
 import 'providers/task_provider.dart';
 import 'providers/support_provider.dart';
 import 'providers/app_config_provider.dart';
+import 'providers/media_provider.dart';
 // FIX: PlayerProvider added
 import 'providers/player_provider.dart';
 
@@ -74,10 +75,11 @@ Future<void> main() async {
       Provider<UploadService>(create: (_) => UploadService(apiService)),
       ChangeNotifierProvider(create: (_) => AppConfigProvider(apiService)),
       ChangeNotifierProvider(create: (_) => WalletProvider(apiService)),
-      ChangeNotifierProvider(create: (_) => EarnProvider(apiService)),
+      ChangeNotifierProvider(create: (_) => EarnProvider()),
       ChangeNotifierProvider(create: (_) => TaskProvider(apiService)),
       ChangeNotifierProvider(create: (_) => SupportProvider(apiService)),
       ChangeNotifierProvider(create: (_) => LeaderboardProvider(apiService)),
+      ChangeNotifierProvider(create: (_) => MediaProvider(apiService)),
       // FIX: PlayerProvider was missing — player features won't work without this
       ChangeNotifierProvider(create: (_) => PlayerProvider()),
     ],

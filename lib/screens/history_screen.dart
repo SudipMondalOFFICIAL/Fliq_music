@@ -38,10 +38,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   // ── Filter chips ──────────────────────────────────────────────
   static const _filters = [
     {'label': 'All', 'type': null},
-    {'label': 'Watch Ads', 'type': 'ad_view'},
     {'label': 'Tasks', 'type': 'task'},
-    {'label': 'Offerwall', 'type': 'offerwall'},
     {'label': 'Referral', 'type': 'referral'},
+    {'label': 'Watch', 'type': 'watch'},
     {'label': 'Promo', 'type': 'promo'},
     {'label': 'Withdraw', 'type': 'withdraw'},
     {'label': 'Admin', 'type': 'admin'},
@@ -49,20 +48,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   // ── Type display config ───────────────────────────────────────
   static const _typeConfig = {
-    'ad_view': {
+    'watch': {
       'icon': Icons.play_circle_outline,
-      'label': 'Ad Watched',
+      'label': 'Video Watched',
       'color': _lime
     },
     'task': {
       'icon': Icons.check_circle_outline,
       'label': 'Task Completed',
       'color': _teal
-    },
-    'offerwall': {
-      'icon': Icons.grid_view_rounded,
-      'label': 'Offerwall',
-      'color': _purple
     },
     'referral': {
       'icon': Icons.card_giftcard_outlined,
