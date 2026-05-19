@@ -1,6 +1,7 @@
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  reels_screen.dart — YouTube Shorts / Reels                      ║
 // ║  TikTok-style vertical swipe player                              ║
+// ║  FIX: stream subscription leak, dispose, coin badge              ║
 // ╚══════════════════════════════════════════════════════════════════╝
 
 import 'dart:async';
@@ -12,9 +13,6 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 import '../models/track_model.dart';
 import '../providers/media_provider.dart';
-
-// ── Shorts video IDs — backend থেকে আসবে, এগুলো fallback ──────────
-// Backend এ /music/search?q=shorts&type=any call করে short videos আনা হবে
 
 class ReelsScreen extends StatefulWidget {
   const ReelsScreen({Key? key}) : super(key: key);
@@ -37,7 +35,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
   void initState() {
     super.initState();
     _pageCtrl = PageController();
-    _loadShorts();
+    _loadShorts(refresh: true);
   }
 
   @override
@@ -46,22 +44,30 @@ class _ReelsScreenState extends State<ReelsScreen> {
     super.dispose();
   }
 
-  Future<void> _loadShorts() async {
+  Future<void> _loadShorts({bool refresh = false}) async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      // Backend থেকে short videos search করো
       final mp = context.read<MediaProvider>();
-      await mp.searchShorts();
+      await mp.searchShorts(refresh: refresh);
+      if (!mounted) return;
       final results = mp.shortsResults;
-      if (results.isEmpty) throw Exception('No shorts found');
+      if (results.isEmpty) {
+        setState(() {
+          _loading = false;
+          _error = 'No shorts found. Pull to refresh.';
+        });
+        return;
+      }
       setState(() {
-        _reels = results;
+        _reels = List.from(results);
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _loading = false;
         _error = e.toString().replaceAll('Exception: ', '');
@@ -70,12 +76,18 @@ class _ReelsScreenState extends State<ReelsScreen> {
   }
 
   void _onPageChanged(int index) {
+    if (!mounted) return;
     setState(() => _currentIndex = index);
-    // Load more when near end
+
+    // Load more when 3 videos থেকে শেষে পৌঁছাই
     if (index >= _reels.length - 3) {
       context.read<MediaProvider>().loadMoreShorts().then((_) {
+        if (!mounted) return;
         final mp = context.read<MediaProvider>();
-        if (mounted) setState(() => _reels = mp.shortsResults);
+        final updated = mp.shortsResults;
+        if (updated.length > _reels.length) {
+          setState(() => _reels = List.from(updated));
+        }
       });
     }
   }
@@ -91,7 +103,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
             : _error != null && _reels.isEmpty
                 ? _ShortsErrorState(
                     error: _error!,
-                    onRetry: _loadShorts,
+                    onRetry: () => _loadShorts(refresh: true),
                   )
                 : Stack(
                     children: [
@@ -102,6 +114,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
                         onPageChanged: _onPageChanged,
                         itemCount: _reels.length,
                         itemBuilder: (_, i) => _ReelItem(
+                          key: ValueKey(_reels[i].ytVideoId),
                           track: _reels[i],
                           isActive: i == _currentIndex,
                           onLike: () => context
@@ -217,10 +230,11 @@ class _ReelItem extends StatefulWidget {
   final VoidCallback onLike;
 
   const _ReelItem({
+    Key? key,
     required this.track,
     required this.isActive,
     required this.onLike,
-  });
+  }) : super(key: key);
 
   @override
   State<_ReelItem> createState() => _ReelItemState();
@@ -229,10 +243,17 @@ class _ReelItem extends StatefulWidget {
 class _ReelItemState extends State<_ReelItem> {
   YoutubePlayerController? _ctrl;
   bool _ready = false;
+
+  // FIX: coin badge এ actual earned amount দেখাবে, hardcoded '+2' না
+  int _coinBadgeAmount = 0;
   bool _showCoinBadge = false;
+
   int _watchedSecs = 0;
   bool _coinLogged = false;
   Timer? _watchTimer;
+
+  // FIX: YoutubePlayerController listener leak — removeListener করা হচ্ছে
+  VoidCallback? _ctrlListener;
 
   static const _lime = Color(0xFFE8FF6B);
 
@@ -253,12 +274,11 @@ class _ReelItemState extends State<_ReelItem> {
   }
 
   void _initPlayer() {
-    _ctrl?.dispose();
-    _watchTimer?.cancel();
+    _pauseAndDispose(); // আগের player clean করো
     _watchedSecs = 0;
     _coinLogged = false;
 
-    _ctrl = YoutubePlayerController(
+    final ctrl = YoutubePlayerController(
       initialVideoId: widget.track.ytVideoId,
       flags: const YoutubePlayerFlags(
         autoPlay: true,
@@ -272,18 +292,22 @@ class _ReelItemState extends State<_ReelItem> {
       ),
     );
 
-    _ctrl!.addListener(() {
+    // FIX: listener reference store করো যাতে dispose এ remove করা যায়
+    _ctrlListener = () {
       if (!mounted) return;
-      if (_ctrl!.value.isReady && !_ready) {
+      if (ctrl.value.isReady && !_ready) {
         setState(() => _ready = true);
       }
-    });
+    };
+    ctrl.addListener(_ctrlListener!);
+
+    _ctrl = ctrl;
 
     // Watch time tracker
     _watchTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_ctrl?.value.isPlaying == true) {
         _watchedSecs++;
-        // Coin after 15s watch (shorts are short!)
+        // Shorts: 15s দেখলে coin দাও
         if (!_coinLogged && _watchedSecs >= 15) {
           _coinLogged = true;
           _logWatch();
@@ -291,30 +315,57 @@ class _ReelItemState extends State<_ReelItem> {
       }
     });
 
-    setState(() => _ready = false);
+    if (mounted) setState(() => _ready = false);
   }
 
   void _pauseAndDispose() {
     _watchTimer?.cancel();
-    if (_watchedSecs > 5 && !_coinLogged) _logWatch();
-    _ctrl?.pause();
-    _ctrl?.dispose();
-    _ctrl = null;
+    _watchTimer = null;
+
+    if (_watchedSecs > 5 && !_coinLogged) {
+      _coinLogged = true;
+      _logWatch();
+    }
+
+    if (_ctrl != null) {
+      if (_ctrlListener != null) {
+        // FIX: listener properly remove করো — memory leak বন্ধ
+        _ctrl!.removeListener(_ctrlListener!);
+        _ctrlListener = null;
+      }
+      _ctrl!.pause();
+      _ctrl!.dispose();
+      _ctrl = null;
+    }
+
     if (mounted) setState(() => _ready = false);
   }
 
   void _logWatch() {
+    if (!mounted) return;
     try {
-      context.read<MediaProvider>().logWatch(
+      context
+          .read<MediaProvider>()
+          .logWatch(
             track: widget.track,
             watchDurationSeconds: _watchedSecs,
-          );
+          )
+          .then((earned) {
+        // FIX: actual earned amount badge এ দেখাও
+        if (earned > 0 && mounted) {
+          _showCoinEarned(earned);
+        }
+      });
     } catch (_) {}
   }
 
-  void _showCoin() {
-    setState(() => _showCoinBadge = true);
-    Future.delayed(const Duration(milliseconds: 1500), () {
+  void _showCoinEarned(int amount) {
+    if (!mounted) return;
+    setState(() {
+      _coinBadgeAmount = amount;
+      _showCoinBadge = true;
+    });
+    Future.delayed(const Duration(milliseconds: 1800), () {
       if (mounted) setState(() => _showCoinBadge = false);
     });
   }
@@ -322,8 +373,26 @@ class _ReelItemState extends State<_ReelItem> {
   @override
   void dispose() {
     _watchTimer?.cancel();
-    if (_watchedSecs > 5 && !_coinLogged) _logWatch();
-    _ctrl?.dispose();
+    // Final watch log — widget যাচ্ছে, coin log করো
+    if (_watchedSecs > 5 && !_coinLogged) {
+      _coinLogged = true;
+      // dispose এ context use করা safe না, তাই silent fail
+      try {
+        context.read<MediaProvider>().logWatch(
+              track: widget.track,
+              watchDurationSeconds: _watchedSecs,
+            );
+      } catch (_) {}
+    }
+    // FIX: listener remove করে তারপর dispose করো
+    if (_ctrl != null) {
+      if (_ctrlListener != null) {
+        _ctrl!.removeListener(_ctrlListener!);
+        _ctrlListener = null;
+      }
+      _ctrl!.dispose();
+      _ctrl = null;
+    }
     super.dispose();
   }
 
@@ -399,7 +468,7 @@ class _ReelItemState extends State<_ReelItem> {
             ),
           ),
 
-          // ── Gradient overlay (top) — for header readability ───
+          // ── Gradient overlay (top) ────────────────────────────
           Positioned(
             left: 0,
             right: 0,
@@ -433,10 +502,7 @@ class _ReelItemState extends State<_ReelItem> {
                         ? Colors.redAccent
                         : Colors.white,
                     label: 'Like',
-                    onTap: () {
-                      widget.onLike();
-                      _showCoin();
-                    },
+                    onTap: widget.onLike,
                   ),
                 ),
                 const SizedBox(height: 20),
@@ -449,12 +515,17 @@ class _ReelItemState extends State<_ReelItem> {
                   mirrorHorizontal: true,
                 ),
                 const SizedBox(height: 20),
-                // Coin button
+                // Watch time coin button — tap করলে manually log করো
                 _ActionBtn(
                   icon: Icons.monetization_on_rounded,
                   color: _lime,
                   label: '${_watchedSecs}s',
-                  onTap: _logWatch,
+                  onTap: () {
+                    if (!_coinLogged) {
+                      _coinLogged = true;
+                      _logWatch();
+                    }
+                  },
                 ),
               ],
             ),
@@ -493,12 +564,15 @@ class _ReelItemState extends State<_ReelItem> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    widget.track.channel,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
+                  Flexible(
+                    child: Text(
+                      widget.track.channel,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -555,6 +629,7 @@ class _ReelItemState extends State<_ReelItem> {
           ),
 
           // ── Coin earned badge (animated) ──────────────────────
+          // FIX: actual earned amount দেখাচ্ছে, hardcoded '+2' না
           if (_showCoinBadge)
             Positioned(
               top: size.height * 0.4,
@@ -581,15 +656,15 @@ class _ReelItemState extends State<_ReelItem> {
                             spreadRadius: 2)
                       ],
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.bolt_rounded,
+                        const Icon(Icons.bolt_rounded,
                             color: Color(0xFF0F0F0F), size: 18),
-                        SizedBox(width: 4),
+                        const SizedBox(width: 4),
                         Text(
-                          '+2 coins',
-                          style: TextStyle(
+                          '+$_coinBadgeAmount coins',
+                          style: const TextStyle(
                             color: Color(0xFF0F0F0F),
                             fontWeight: FontWeight.w800,
                             fontSize: 14,

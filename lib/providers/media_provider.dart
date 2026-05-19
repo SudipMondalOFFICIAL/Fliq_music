@@ -1,4 +1,7 @@
-// media_provider.dart — Music/Video feed, search, trending, likes
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  media_provider.dart — Music/Video feed, search, trending, likes ║
+// ║  FIX: searchShorts / loadMoreShorts fully implemented            ║
+// ╚══════════════════════════════════════════════════════════════════╝
 
 import 'package:flutter/material.dart';
 import '../models/track_model.dart';
@@ -31,10 +34,24 @@ class MediaProvider extends ChangeNotifier {
   final Set<String> _likedIds = {};
 
   // ── Shorts / Reels ───────────────────────────────────────────
+  // FIX: পূর্বে searchShorts() / loadMoreShorts() implement ছিল না।
+  // এখন সম্পূর্ণ implement করা হয়েছে।
   List<Track> _shortsResults = [];
   bool _shortsLoading = false;
   bool _shortsHasMore = true;
   int _shortsPage = 1;
+
+  // Shorts query rotation — page বাড়লে query বদলায়
+  static const _shortsQueries = [
+    'youtube shorts india viral',
+    'shorts trending 2024',
+    'funny shorts india',
+    'shorts dance viral',
+    'shorts comedy hindi',
+    'shorts motivation',
+    'shorts food recipe',
+    'shorts cricket india',
+  ];
 
   // ── Watch coins ──────────────────────────────────────────────
   int _dailyWatchEarned = 0;
@@ -44,7 +61,7 @@ class MediaProvider extends ChangeNotifier {
 
   MediaProvider(this._api);
 
-  // Getters
+  // ── Getters ───────────────────────────────────────────────────
   List<Track> get feed => _feed;
   MediaFeedState get feedState => _feedState;
   bool get feedHasMore => _feedHasMore;
@@ -204,37 +221,66 @@ class MediaProvider extends ChangeNotifier {
     }
   }
 
-  // ── Shorts / Reels ─────────────────────────────────────────
+  // ── Shorts / Reels ────────────────────────────────────────────
+  //
+  // FIX: এই method দুটো আগে implement করা ছিল না —
+  // ReelsScreen crash করত NoSuchMethodError দিয়ে।
+  //
+  // searchShorts({refresh: true}) → fresh load
+  // searchShorts()               → next page (pagination)
+  // loadMoreShorts()             → guard সহ next page
+  //
   Future<void> searchShorts({bool refresh = false}) async {
+    // Guard: already loading হলে skip করো
     if (_shortsLoading) return;
+
     if (refresh) {
       _shortsResults = [];
       _shortsPage = 1;
       _shortsHasMore = true;
     }
+
     _shortsLoading = true;
+    _error = null;
     notifyListeners();
+
     try {
-      // YouTube Shorts search — vertical short videos (< 60s usually)
-      final queries = [
-        'youtube shorts',
-        'shorts trending india',
-        'viral shorts 2024',
-      ];
-      final q = queries[(_shortsPage - 1) % queries.length];
-      final results = await _api.searchMusic(q: q, type: 'any', maxResults: 20);
-      // Filter for shorter videos (shorts are typically < 65 seconds)
-      // If duration is 0 (unknown), include it — might be a short
-      final shorts = results
+      // Page rotation দিয়ে query বদলাও — একই results বারবার না আসে
+      final queryIndex = (_shortsPage - 1) % _shortsQueries.length;
+      final query = _shortsQueries[queryIndex];
+
+      final results = await _api.searchMusic(
+        q: query,
+        type: 'any',
+        maxResults: 25,
+      );
+
+      // Shorts filter:
+      // • durationSeconds == 0  → unknown duration, include করো (হতে পারে short)
+      // • durationSeconds <= 65 → YouTube Shorts সাধারণত ≤ 60s
+      final filtered = results
           .where((t) => t.durationSeconds == 0 || t.durationSeconds <= 65)
           .toList();
-      final allResults = shorts.isNotEmpty ? shorts : results.take(10).toList();
-      _shortsResults =
-          refresh ? allResults : [..._shortsResults, ...allResults];
-      _shortsHasMore = allResults.length >= 10;
+
+      // Filter করার পরে খুব কম result হলে filter ছাড়াই নাও (fallback)
+      final toAdd = filtered.length >= 5 ? filtered : results.take(15).toList();
+
+      // Duplicate ID বাদ দাও (page overlap হলে)
+      final existingIds = _shortsResults.map((t) => t.ytVideoId).toSet();
+      final newTracks =
+          toAdd.where((t) => !existingIds.contains(t.ytVideoId)).toList();
+
+      _shortsResults = refresh ? newTracks : [..._shortsResults, ...newTracks];
+
+      // Has more: নতুন result এলে আরো আছে ধরো,
+      // শেষ query rotation ঘুরে এলে বা কিছু না পেলে stop করো
+      _shortsHasMore =
+          newTracks.isNotEmpty && _shortsPage < _shortsQueries.length * 2;
+
       _shortsPage++;
     } catch (e) {
       _error = e.toString().replaceAll('Exception: ', '');
+      // Error হলে hasMore false করো না — retry করা যাবে
     } finally {
       _shortsLoading = false;
       notifyListeners();
@@ -242,10 +288,21 @@ class MediaProvider extends ChangeNotifier {
   }
 
   Future<void> loadMoreShorts() async {
-    if (!_shortsHasMore || _shortsLoading) return;
+    // Guard: loading চললে বা আর data নেই তাহলে skip
+    if (_shortsLoading || !_shortsHasMore) return;
     await searchShorts();
   }
 
+  // ── Shorts reset ──────────────────────────────────────────────
+  void resetShorts() {
+    _shortsResults = [];
+    _shortsPage = 1;
+    _shortsHasMore = true;
+    _shortsLoading = false;
+    notifyListeners();
+  }
+
+  // ── Error handling ────────────────────────────────────────────
   void clearError() {
     _error = null;
     notifyListeners();

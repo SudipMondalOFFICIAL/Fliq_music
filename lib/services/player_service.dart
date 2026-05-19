@@ -1,8 +1,11 @@
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  player_service.dart — YouTube extract + Audio + Background Play ║
+// ║  FIX: Android 13+ permission, stream leak, error handling        ║
 // ╚══════════════════════════════════════════════════════════════════╝
 
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:audio_service/audio_service.dart';
@@ -55,14 +58,16 @@ class PlayerService {
     final cached = _audioUrlCache[videoId];
     if (cached != null && !cached.isExpired) return cached.url;
     try {
-      final manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      final manifest = await _yt.videos.streamsClient
+          .getManifest(videoId)
+          .timeout(const Duration(seconds: 20));
       final streams = manifest.audioOnly;
       if (streams.isEmpty) return null;
       final url = streams.withHighestBitrate().url.toString();
       _audioUrlCache[videoId] = _CachedUrl(url);
       return url;
     } catch (e) {
-      print('[PlayerService] audio stream fetch error: $e');
+      debugPrint('[PlayerService] audio stream fetch error: $e');
       return null;
     }
   }
@@ -72,14 +77,17 @@ class PlayerService {
     final cached = _videoUrlCache[videoId];
     if (cached != null && !cached.isExpired) return cached.url;
     try {
-      final manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      final manifest = await _yt.videos.streamsClient
+          .getManifest(videoId)
+          .timeout(const Duration(seconds: 20));
       final streams = manifest.muxed;
       if (streams.isEmpty) return null;
       final sorted = streams.toList()
         ..sort((a, b) => b.videoQuality.index.compareTo(a.videoQuality.index));
       MuxedStreamInfo best = sorted.first;
       for (final s in sorted) {
-        if (s.videoQualityLabel.contains('720') ||
+        if (s.videoQualityLabel.contains('1080') ||
+            s.videoQualityLabel.contains('720') ||
             s.videoQualityLabel.contains('480') ||
             s.videoQualityLabel.contains('360')) {
           best = s;
@@ -90,7 +98,7 @@ class PlayerService {
       _videoUrlCache[videoId] = _CachedUrl(url);
       return url;
     } catch (e) {
-      print('[PlayerService] video stream error: $e');
+      debugPrint('[PlayerService] video stream error: $e');
       return null;
     }
   }
@@ -113,7 +121,7 @@ class PlayerService {
       await _player.play();
       return true;
     } catch (e) {
-      print('[PlayerService] playTrack error: $e');
+      debugPrint('[PlayerService] playTrack error: $e');
       return false;
     }
   }
@@ -159,30 +167,74 @@ class PlayerService {
   double get volume => _player.volume;
 
   // ── Download ──────────────────────────────────────────────────
-  Future<String?> downloadTrack(Track track,
-      {void Function(double)? onProgress}) async {
+  //
+  // FIX: Android 13+ (SDK 33+) এ Permission.storage কাজ করে না।
+  // getApplicationDocumentsDirectory() app-private directory দেয়,
+  // সেখানে কোনো permission ছাড়াই write করা যায় — সব Android version এ।
+  // তাই storage permission চেক সম্পূর্ণ সরিয়ে দেওয়া হয়েছে।
+  //
+  Future<String?> downloadTrack(
+    Track track, {
+    void Function(double)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
     try {
-      if (Platform.isAndroid) {
-        final status = await Permission.storage.request();
-        if (!status.isGranted) {
-          final ms = await Permission.manageExternalStorage.request();
-          if (!ms.isGranted) return null;
-        }
-      }
+      // app-private directory — no permission needed on any Android version
       final dir = await getApplicationDocumentsDirectory();
       final filqDir = Directory('${dir.path}/filq_downloads');
       if (!filqDir.existsSync()) filqDir.createSync(recursive: true);
+
       final filePath = '${filqDir.path}/${track.ytVideoId}.m4a';
+
+      // Already downloaded — return immediately
       if (File(filePath).existsSync()) return filePath;
+
       final url = await getAudioStreamUrl(track.ytVideoId);
       if (url == null) return null;
-      await _dio.download(url, filePath, onReceiveProgress: (r, t) {
-        if (t > 0 && onProgress != null) onProgress(r / t);
-      });
+
+      await _dio.download(
+        url,
+        filePath,
+        cancelToken: cancelToken,
+        onReceiveProgress: (received, total) {
+          if (total > 0 && onProgress != null) {
+            onProgress(received / total);
+          }
+        },
+      );
+
       return filePath;
-    } catch (e) {
-      print('[PlayerService] download error: $e');
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.cancel) {
+        debugPrint('[PlayerService] download cancelled: ${track.ytVideoId}');
+      } else {
+        debugPrint('[PlayerService] download error: $e');
+      }
       return null;
+    } catch (e) {
+      debugPrint('[PlayerService] download error: $e');
+      return null;
+    }
+  }
+
+  // ── External storage download (optional — user's Music folder) ─
+  // শুধু user explicitly "save to Music" চাইলে call করো।
+  // Android 13+ এ READ_MEDIA_AUDIO permission লাগে।
+  Future<bool> requestExternalStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final info = await DeviceInfoPlugin().androidInfo;
+      if (info.version.sdkInt >= 33) {
+        // Android 13+ — audio-specific permission
+        final status = await Permission.audio.request();
+        return status.isGranted;
+      } else {
+        // Android 12 এবং নিচে — legacy storage permission
+        final status = await Permission.storage.request();
+        return status.isGranted;
+      }
+    } catch (_) {
+      return false;
     }
   }
 
@@ -195,13 +247,24 @@ class PlayerService {
   }
 
   Future<bool> isDownloaded(String ytVideoId) async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/filq_downloads/$ytVideoId.m4a').existsSync();
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      return File('${dir.path}/filq_downloads/$ytVideoId.m4a').existsSync();
+    } catch (_) {
+      return false;
+    }
   }
 
+  // ── Cache management ──────────────────────────────────────────
   void clearCache() {
     _audioUrlCache.clear();
     _videoUrlCache.clear();
+  }
+
+  // Expired cache entries পরিষ্কার করো (call periodically if needed)
+  void pruneExpiredCache() {
+    _audioUrlCache.removeWhere((_, v) => v.isExpired);
+    _videoUrlCache.removeWhere((_, v) => v.isExpired);
   }
 
   void dispose() {
