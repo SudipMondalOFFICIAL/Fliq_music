@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/track_model.dart';
 import '../services/player_service.dart';
+import 'download_provider.dart';
 import 'dart:io';
 
 enum PlayerStatus { idle, loading, playing, paused, error }
@@ -130,14 +131,34 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   /// Play specific track from queue
-  Future<void> playTrack(Track track, {bool isVideo = false}) async {
+  /// FIX: If track.localPath is null, check DownloadProvider for offline file.
+  /// This means downloaded tracks play offline automatically with no code change
+  /// in screens — just call playTrack(track) as usual.
+  Future<void> playTrack(Track track,
+      {bool isVideo = false, DownloadProvider? downloads}) async {
     try {
       _status = PlayerStatus.loading;
-      _currentTrack = track;
       _errorMessage = null;
       notifyListeners();
 
-      final success = await _playerService.playTrack(track, isVideo: isVideo);
+      // FIX: Auto-resolve local path for offline playback
+      Track resolvedTrack = track;
+      if (track.localPath == null && downloads != null) {
+        final ds = downloads.stateOf(track.ytVideoId);
+        if (!isVideo && ds.isAudioDownloaded && ds.audioPath != null) {
+          resolvedTrack =
+              track.copyWith(localPath: ds.audioPath, isDownloaded: true);
+        } else if (isVideo && ds.isVideoDownloaded && ds.videoPath != null) {
+          resolvedTrack =
+              track.copyWith(localPath: ds.videoPath, isDownloaded: true);
+        }
+      }
+
+      _currentTrack = resolvedTrack;
+      notifyListeners();
+
+      final success =
+          await _playerService.playTrack(resolvedTrack, isVideo: isVideo);
       if (success) {
         _status = PlayerStatus.playing;
         _isPlaying = true;
@@ -153,10 +174,11 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   /// Play track at queue index
-  Future<void> playTrackAtIndex(int index) async {
+  Future<void> playTrackAtIndex(int index,
+      {DownloadProvider? downloads}) async {
     if (index >= 0 && index < _queue.length) {
       _currentIndex = index;
-      await playTrack(_queue[index]);
+      await playTrack(_queue[index], downloads: downloads);
     }
   }
 

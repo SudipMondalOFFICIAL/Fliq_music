@@ -21,6 +21,7 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import '../models/track_model.dart';
 import '../providers/media_provider.dart';
 import '../providers/player_provider.dart';
+import '../providers/download_provider.dart';
 import '../services/player_service.dart';
 
 // ══════════════════════════════════════════════════════════════════
@@ -76,11 +77,15 @@ class _MediaScreenState extends State<MediaScreen>
       return;
     }
     // Music → audio player (inline + background)
+    // FIX: pass DownloadProvider so offline tracks play without internet
     setState(() {
       _playerTrack = track;
       _playerVisible = true;
     });
-    context.read<PlayerProvider>().playTrack(track);
+    context.read<PlayerProvider>().playTrack(
+      track,
+      downloads: context.read<DownloadProvider>(),
+    );
   }
 
   List<Track> _getSuggested(Track track) {
@@ -390,6 +395,33 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       }
     });
     setState(() {});
+  }
+
+  void _showDeleteVideoDialog(BuildContext context, DownloadProvider dl) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF141414),
+        title: const Text('Remove Download',
+            style: TextStyle(color: Colors.white)),
+        content: const Text('Delete this downloaded video file?',
+            style: TextStyle(color: Color(0xFF888888))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel',
+                style: TextStyle(color: Color(0xFF888888))),
+          ),
+          TextButton(
+            onPressed: () {
+              dl.deleteVideo(widget.track.ytVideoId);
+              Navigator.pop(context);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _playNext() {
@@ -888,49 +920,113 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           ],
         ]),
         const SizedBox(height: 12),
-        // Like button
-        Consumer<MediaProvider>(
-          builder: (_, mp, __) => Row(children: [
-            GestureDetector(
-              onTap: () => mp.toggleLike(widget.track.ytVideoId),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: mp.isLiked(widget.track.ytVideoId)
-                      ? Colors.red.withOpacity(0.15)
-                      : const Color(0xFF1A1A1A),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
+        // Like + Download buttons
+        Consumer2<MediaProvider, DownloadProvider>(
+          builder: (_, mp, dl, __) {
+            final ds = dl.stateOf(widget.track.ytVideoId);
+            return Row(children: [
+              // Like button
+              GestureDetector(
+                onTap: () => mp.toggleLike(widget.track.ytVideoId),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
                     color: mp.isLiked(widget.track.ytVideoId)
-                        ? Colors.redAccent
-                        : const Color(0xFF2A2A2A),
+                        ? Colors.red.withOpacity(0.15)
+                        : const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: mp.isLiked(widget.track.ytVideoId)
+                          ? Colors.redAccent
+                          : const Color(0xFF2A2A2A),
+                    ),
                   ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(
+                      mp.isLiked(widget.track.ytVideoId)
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      color: mp.isLiked(widget.track.ytVideoId)
+                          ? Colors.redAccent
+                          : const Color(0xFF888888),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      mp.isLiked(widget.track.ytVideoId) ? 'Liked' : 'Like',
+                      style: TextStyle(
+                          color: mp.isLiked(widget.track.ytVideoId)
+                              ? Colors.redAccent
+                              : const Color(0xFF888888),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ]),
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(
-                    mp.isLiked(widget.track.ytVideoId)
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                    color: mp.isLiked(widget.track.ytVideoId)
-                        ? Colors.redAccent
-                        : const Color(0xFF888888),
-                    size: 18,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    mp.isLiked(widget.track.ytVideoId) ? 'Liked' : 'Like',
-                    style: TextStyle(
-                        color: mp.isLiked(widget.track.ytVideoId)
-                            ? Colors.redAccent
-                            : const Color(0xFF888888),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600),
-                  ),
-                ]),
               ),
-            ),
-          ]),
+              const SizedBox(width: 10),
+              // ── Video Download button ──
+              GestureDetector(
+                onTap: ds.isVideoDownloading
+                    ? () => dl.cancelVideo(widget.track.ytVideoId)
+                    : ds.isVideoDownloaded
+                        ? () => _showDeleteVideoDialog(context, dl)
+                        : () {
+                            dl.cacheTrack(widget.track);
+                            dl.downloadVideo(widget.track);
+                          },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: ds.isVideoDownloaded
+                        ? Colors.green.withOpacity(0.15)
+                        : const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: ds.isVideoDownloaded
+                          ? Colors.green
+                          : const Color(0xFF2A2A2A),
+                    ),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    ds.isVideoDownloading
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              value: ds.videoProgress,
+                              strokeWidth: 2,
+                              color: _lime,
+                            ),
+                          )
+                        : Icon(
+                            ds.isVideoDownloaded
+                                ? Icons.download_done_rounded
+                                : Icons.download_rounded,
+                            color: ds.isVideoDownloaded
+                                ? Colors.green
+                                : const Color(0xFF888888),
+                            size: 18,
+                          ),
+                    const SizedBox(width: 6),
+                    Text(
+                      ds.isVideoDownloading
+                          ? '${(ds.videoProgress * 100).toInt()}%'
+                          : ds.isVideoDownloaded
+                              ? 'Saved'
+                              : 'Download',
+                      style: TextStyle(
+                          color: ds.isVideoDownloaded
+                              ? Colors.green
+                              : const Color(0xFF888888),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ]),
+                ),
+              ),
+            ]);
+          },
         ),
         const Divider(color: Color(0xFF1E1E1E), height: 24),
       ]),
@@ -1891,6 +1987,45 @@ class _FullAudioPlayerScreenState extends State<FullAudioPlayerScreen> {
                     onPressed: () => mp.toggleLike(widget.track.ytVideoId),
                   ),
                 ),
+                // ── Audio Download button ──
+                Consumer<DownloadProvider>(
+                  builder: (_, dl, __) {
+                    final ds = dl.stateOf(widget.track.ytVideoId);
+                    return IconButton(
+                      icon: ds.isAudioDownloading
+                          ? SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                value: ds.audioProgress,
+                                strokeWidth: 2,
+                                color: _lime,
+                              ),
+                            )
+                          : Icon(
+                              ds.isAudioDownloaded
+                                  ? Icons.download_done_rounded
+                                  : Icons.download_for_offline_rounded,
+                              color: ds.isAudioDownloaded
+                                  ? Colors.green
+                                  : const Color(0xFF555555),
+                            ),
+                      tooltip: ds.isAudioDownloading
+                          ? 'Cancel download'
+                          : ds.isAudioDownloaded
+                              ? 'Downloaded — tap to remove'
+                              : 'Download audio',
+                      onPressed: ds.isAudioDownloading
+                          ? () => dl.cancelAudio(widget.track.ytVideoId)
+                          : ds.isAudioDownloaded
+                              ? () => _showDeleteAudioDialog(context, dl)
+                              : () {
+                                  dl.cacheTrack(widget.track);
+                                  dl.downloadAudio(widget.track);
+                                },
+                    );
+                  },
+                ),
               ]),
             ),
             // Album art
@@ -2056,6 +2191,33 @@ class _FullAudioPlayerScreenState extends State<FullAudioPlayerScreen> {
             const SizedBox(height: 16),
           ]),
         ),
+      ),
+    );
+  }
+
+  void _showDeleteAudioDialog(BuildContext context, DownloadProvider dl) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF141414),
+        title: const Text('Remove Download',
+            style: TextStyle(color: Colors.white)),
+        content: const Text('Delete this downloaded audio file?',
+            style: TextStyle(color: Color(0xFF888888))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel',
+                style: TextStyle(color: Color(0xFF888888))),
+          ),
+          TextButton(
+            onPressed: () {
+              dl.deleteAudio(widget.track.ytVideoId);
+              Navigator.pop(context);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
       ),
     );
   }

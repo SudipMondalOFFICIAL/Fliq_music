@@ -4,8 +4,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track_model.dart';
 import '../providers/player_provider.dart';
+import '../providers/download_provider.dart';
 // FIX: track_tile.dart is in widgets/, not screens/ — corrected import path
 import '../widgets/track_tile.dart';
 
@@ -52,19 +54,25 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 40),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        child: Image.network(
-                          player.currentTrack!.thumbnail,
+                        child: CachedNetworkImage(
+                          imageUrl: player.currentTrack!.thumbnail,
                           width: double.infinity,
                           height: 300,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              width: double.infinity,
-                              height: 300,
-                              color: Colors.grey[300],
-                              child: const Icon(Icons.music_note, size: 100),
-                            );
-                          },
+                          placeholder: (_, __) => Container(
+                            width: double.infinity,
+                            height: 300,
+                            color: Colors.grey[800],
+                            child: const Icon(Icons.music_note,
+                                size: 100, color: Colors.white38),
+                          ),
+                          errorWidget: (_, __, ___) => Container(
+                            width: double.infinity,
+                            height: 300,
+                            color: Colors.grey[800],
+                            child: const Icon(Icons.music_note,
+                                size: 100, color: Colors.white38),
+                          ),
                         ),
                       ),
                     ),
@@ -268,17 +276,73 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                     ),
                     const SizedBox(height: 40),
-                    // Queue button
+                    // Queue button + Download button row
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.queue_music),
-                        label: Text(
-                          'Queue (${player.queue.length})',
-                        ),
-                        onPressed: () {
-                          setState(() => _showQueue = !_showQueue);
-                        },
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.queue_music),
+                              label: Text(
+                                'Queue (${player.queue.length})',
+                              ),
+                              onPressed: () {
+                                setState(() => _showQueue = !_showQueue);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // ── Download button ──
+                          Consumer<DownloadProvider>(
+                            builder: (context, dl, _) {
+                              final track = player.currentTrack!;
+                              final audioState = dl.stateOf(track.ytVideoId);
+                              final isDownloaded = audioState.isAudioDownloaded;
+                              final isDownloading =
+                                  audioState.isAudioDownloading;
+
+                              return ElevatedButton.icon(
+                                icon: isDownloading
+                                    ? SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          value: audioState.audioProgress,
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : Icon(
+                                        isDownloaded
+                                            ? Icons.download_done_rounded
+                                            : Icons.download_rounded,
+                                      ),
+                                label: Text(
+                                  isDownloading
+                                      ? '${(audioState.audioProgress * 100).toInt()}%'
+                                      : isDownloaded
+                                          ? 'Saved'
+                                          : 'Download',
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: isDownloaded
+                                      ? Colors.green.shade700
+                                      : null,
+                                ),
+                                onPressed: isDownloading
+                                    ? () => dl.cancelAudio(track.ytVideoId)
+                                    : isDownloaded
+                                        ? () => _showDeleteDialog(
+                                            context, dl, track)
+                                        : () {
+                                            dl.cacheTrack(track);
+                                            dl.downloadAudio(track);
+                                          },
+                              );
+                            },
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 100),
@@ -298,6 +362,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  void _showDeleteDialog(
+      BuildContext context, DownloadProvider dl, Track track) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Remove Download'),
+        content: const Text('Delete this downloaded audio file?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              dl.deleteAudio(track.ytVideoId);
+              Navigator.pop(context);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
       ),
     );
   }

@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/track_model.dart';
 import '../providers/player_provider.dart';
 
@@ -39,19 +40,25 @@ class TrackTile extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(4),
-          child: Image.network(
-            track.thumbnail,
+          child: CachedNetworkImage(
+            imageUrl: track.thumbnail,
             width: 50,
             height: 50,
             fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                width: 50,
-                height: 50,
-                color: Colors.grey[300],
-                child: const Icon(Icons.music_note),
-              );
-            },
+            placeholder: (_, __) => Container(
+              width: 50,
+              height: 50,
+              color: Colors.grey[800],
+              child:
+                  const Icon(Icons.music_note, color: Colors.white38, size: 20),
+            ),
+            errorWidget: (_, __, ___) => Container(
+              width: 50,
+              height: 50,
+              color: Colors.grey[800],
+              child:
+                  const Icon(Icons.music_note, color: Colors.white38, size: 20),
+            ),
           ),
         ),
         title: Text(
@@ -144,19 +151,25 @@ class TrackCardView extends StatelessWidget {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                track.thumbnail,
+              child: CachedNetworkImage(
+                imageUrl: track.thumbnail,
                 width: double.infinity,
                 height: 200,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    width: double.infinity,
-                    height: 200,
-                    color: Colors.grey[300],
-                    child: const Icon(Icons.music_note, size: 64),
-                  );
-                },
+                placeholder: (_, __) => Container(
+                  width: double.infinity,
+                  height: 200,
+                  color: Colors.grey[800],
+                  child: const Icon(Icons.music_note,
+                      size: 64, color: Colors.white38),
+                ),
+                errorWidget: (_, __, ___) => Container(
+                  width: double.infinity,
+                  height: 200,
+                  color: Colors.grey[800],
+                  child: const Icon(Icons.music_note,
+                      size: 64, color: Colors.white38),
+                ),
               ),
             ),
             // Gradient overlay

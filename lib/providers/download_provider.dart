@@ -76,6 +76,10 @@ class DownloadProvider extends ChangeNotifier {
 
   final Map<String, TrackDownloadState> _states = {};
 
+  // FIX: Cache track metadata (title/channel/thumbnail) so Downloads screen
+  // can show proper names and play offline without network
+  final Map<String, Track> _trackCache = {};
+
   // Aggregate storage info
   int _audioStorageBytes = 0;
   int _videoStorageBytes = 0;
@@ -109,6 +113,15 @@ class DownloadProvider extends ChangeNotifier {
       .where((s) => s.isVideoDownloaded)
       .map((s) => s.ytVideoId)
       .toList();
+
+  // FIX: Get cached track info for display in Downloads screen
+  Track? cachedTrackOf(String ytVideoId) => _trackCache[ytVideoId];
+
+  // FIX: Call this before downloadAudio/downloadVideo to persist track metadata
+  void cacheTrack(Track track) {
+    _trackCache[track.ytVideoId] = track;
+    // No notifyListeners needed — UI reads this lazily
+  }
 
   // ── Load existing local files on startup ────────────────────────
   Future<void> _loadLocalState() async {
