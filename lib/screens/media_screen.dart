@@ -1,7 +1,14 @@
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  media_screen.dart — YouTube-style Media Screen                  ║
 // ║  Tabs: 🏠 Feed | 🔥 Trending | 🔍 Search | ❤️ Liked             ║
-// ║  Inline video/audio player with coins earning                    ║
+// ║  Features:                                                        ║
+// ║    • Video tap → real video player (video_player + chewie)       ║
+// ║    • Music tap → audio player (just_audio background)            ║
+// ║    • Double-tap ±10s seek                                        ║
+// ║    • Fullscreen (landscape rotate)                               ║
+// ║    • Screen-off background play (audio)                          ║
+// ║    • Autoplay next — toggle on/off                               ║
+// ║    • Suggested videos below player                               ║
 // ╚══════════════════════════════════════════════════════════════════╝
 
 import 'dart:async';
@@ -15,7 +22,6 @@ import 'package:chewie/chewie.dart';
 import '../models/track_model.dart';
 import '../providers/media_provider.dart';
 import '../providers/player_provider.dart';
-import '../providers/wallet_provider.dart';
 import '../services/player_service.dart';
 
 // ══════════════════════════════════════════════════════════════════
@@ -57,11 +63,31 @@ class _MediaScreenState extends State<MediaScreen>
   }
 
   void _openPlayer(Track track) {
+    // Video → open full video screen
+    if (track.category != 'music') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => VideoPlayerScreen(
+            track: track,
+            suggestedTracks: _getSuggested(track),
+          ),
+        ),
+      );
+      return;
+    }
+    // Music → audio player (inline + background)
     setState(() {
       _playerTrack = track;
       _playerVisible = true;
     });
     context.read<PlayerProvider>().playTrack(track);
+  }
+
+  List<Track> _getSuggested(Track track) {
+    final mp = context.read<MediaProvider>();
+    final all = [...mp.feed, ...mp.trending, ...mp.searchResults];
+    return all.where((t) => t.ytVideoId != track.ytVideoId).take(15).toList();
   }
 
   void _closePlayer() {
@@ -90,12 +116,12 @@ class _MediaScreenState extends State<MediaScreen>
                 ],
               ),
             ),
-            // Inline mini player at bottom
+            // Inline mini audio player at bottom
             if (_playerVisible && _playerTrack != null)
               _InlinePlayer(
                 track: _playerTrack!,
                 onClose: _closePlayer,
-                onExpand: () => _showFullPlayer(context),
+                onExpand: () => _showFullAudioPlayer(context),
               ),
           ],
         ),
@@ -178,13 +204,600 @@ class _MediaScreenState extends State<MediaScreen>
     );
   }
 
-  void _showFullPlayer(BuildContext context) {
+  void _showFullAudioPlayer(BuildContext context) {
     if (_playerTrack == null) return;
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => FullPlayerScreen(track: _playerTrack!),
+        builder: (_) => FullAudioPlayerScreen(track: _playerTrack!),
         fullscreenDialog: true,
+      ),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  VIDEO PLAYER SCREEN — YouTube-style
+//  • video_player + chewie
+//  • Double-tap left/right ±10s seek
+//  • Fullscreen (landscape)
+//  • Autoplay toggle
+//  • Suggested videos below
+// ══════════════════════════════════════════════════════════════════
+
+class VideoPlayerScreen extends StatefulWidget {
+  final Track track;
+  final List<Track> suggestedTracks;
+
+  const VideoPlayerScreen({
+    Key? key,
+    required this.track,
+    this.suggestedTracks = const [],
+  }) : super(key: key);
+
+  @override
+  State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
+}
+
+class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+  VideoPlayerController? _videoCtrl;
+  ChewieController? _chewieCtrl;
+
+  bool _loading = true;
+  String? _error;
+  bool _isFullscreen = false;
+  bool _autoplay = true;
+  bool _showDoubleTapLeft = false;
+  bool _showDoubleTapRight = false;
+  Timer? _doubleTapTimer;
+
+  // Track watch time for coin earning
+  Timer? _watchTimer;
+  int _watchedSeconds = 0;
+  bool _coinLogged = false;
+
+  static const _bg = Color(0xFF0F0F0F);
+  static const _lime = Color(0xFFE8FF6B);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVideo(widget.track);
+  }
+
+  Future<void> _loadVideo(Track track) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _watchedSeconds = 0;
+      _coinLogged = false;
+    });
+
+    // Dispose previous controllers
+    _chewieCtrl?.dispose();
+    _videoCtrl?.dispose();
+    _watchTimer?.cancel();
+
+    try {
+      final url =
+          await PlayerService.instance.getVideoStreamUrl(track.ytVideoId);
+      if (url == null) throw Exception('Could not get video stream');
+
+      final ctrl = VideoPlayerController.networkUrl(Uri.parse(url));
+      await ctrl.initialize();
+
+      if (!mounted) return;
+
+      final chewie = ChewieController(
+        videoPlayerController: ctrl,
+        autoPlay: true,
+        looping: false,
+        allowFullScreen: true,
+        allowMuting: true,
+        showControls: true,
+        showOptions: false,
+        materialProgressColors: ChewieProgressColors(
+          playedColor: _lime,
+          handleColor: _lime,
+          backgroundColor: Colors.white24,
+          bufferedColor: Colors.white38,
+        ),
+        placeholder: Container(color: Colors.black),
+        autoInitialize: true,
+        fullScreenByDefault: false,
+        deviceOrientationsOnEnterFullScreen: [
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ],
+        deviceOrientationsAfterFullScreen: [
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+        ],
+      );
+
+      setState(() {
+        _videoCtrl = ctrl;
+        _chewieCtrl = chewie;
+        _loading = false;
+      });
+
+      // Watch time tracker for coin earning
+      _watchTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (_videoCtrl?.value.isPlaying == true) {
+          _watchedSeconds++;
+          // Log coins after 30s watch
+          if (!_coinLogged && _watchedSeconds >= 30) {
+            _coinLogged = true;
+            context
+                .read<MediaProvider>()
+                .logWatch(track: track, watchDurationSeconds: _watchedSeconds);
+          }
+        }
+      });
+
+      // Autoplay next when video ends
+      ctrl.addListener(() {
+        if (ctrl.value.position >=
+                ctrl.value.duration - const Duration(seconds: 1) &&
+            ctrl.value.position > Duration.zero &&
+            !ctrl.value.isPlaying &&
+            _autoplay) {
+          _playNext();
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Could not load video. Please try again.\n$e';
+        });
+      }
+    }
+  }
+
+  void _playNext() {
+    if (widget.suggestedTracks.isEmpty) return;
+    final next = widget.suggestedTracks.first;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VideoPlayerScreen(
+          track: next,
+          suggestedTracks: widget.suggestedTracks
+              .where((t) => t.ytVideoId != next.ytVideoId)
+              .toList(),
+        ),
+      ),
+    );
+  }
+
+  void _seekLeft() {
+    final pos = _videoCtrl?.value.position ?? Duration.zero;
+    final target = pos - const Duration(seconds: 10);
+    _videoCtrl?.seekTo(target < Duration.zero ? Duration.zero : target);
+    setState(() => _showDoubleTapLeft = true);
+    _doubleTapTimer?.cancel();
+    _doubleTapTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() => _showDoubleTapLeft = false);
+    });
+  }
+
+  void _seekRight() {
+    final pos = _videoCtrl?.value.position ?? Duration.zero;
+    final dur = _videoCtrl?.value.duration ?? Duration.zero;
+    final target = pos + const Duration(seconds: 10);
+    _videoCtrl?.seekTo(target > dur ? dur : target);
+    setState(() => _showDoubleTapRight = true);
+    _doubleTapTimer?.cancel();
+    _doubleTapTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() => _showDoubleTapRight = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _watchTimer?.cancel();
+    _doubleTapTimer?.cancel();
+    // Log final watch time
+    if (_watchedSeconds > 5 && !_coinLogged) {
+      context
+          .read<MediaProvider>()
+          .logWatch(track: widget.track, watchDurationSeconds: _watchedSeconds);
+    }
+    _chewieCtrl?.dispose();
+    _videoCtrl?.dispose();
+    // Restore portrait after leaving video screen
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenW = MediaQuery.of(context).size.width;
+
+    return Scaffold(
+      backgroundColor: _bg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ── Video player area ─────────────────────────────
+            _buildVideoArea(screenW),
+
+            // ── Info + controls + suggested (scrollable) ──────
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  _buildVideoInfo(),
+                  _buildAutoplayToggle(),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(14, 8, 14, 6),
+                    child: Text('Up Next',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15)),
+                  ),
+                  ...widget.suggestedTracks.take(10).map((t) => _SuggestedTile(
+                        track: t,
+                        onTap: () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => VideoPlayerScreen(
+                                track: t,
+                                suggestedTracks: widget.suggestedTracks
+                                    .where((x) => x.ytVideoId != t.ytVideoId)
+                                    .toList(),
+                              ),
+                            ),
+                          );
+                        },
+                      )),
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoArea(double screenW) {
+    final videoH = screenW * 9 / 16; // 16:9
+
+    return SizedBox(
+      width: screenW,
+      height: videoH,
+      child: Stack(
+        children: [
+          // Background
+          Container(color: Colors.black),
+
+          // Video or loading/error
+          if (_loading)
+            const Center(
+                child: CircularProgressIndicator(color: Color(0xFFE8FF6B)))
+          else if (_error != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline,
+                        color: Colors.red, size: 40),
+                    const SizedBox(height: 10),
+                    Text(_error!,
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 13),
+                        textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: _lime,
+                          foregroundColor: Colors.black),
+                      onPressed: () => _loadVideo(widget.track),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else if (_chewieCtrl != null)
+            Chewie(controller: _chewieCtrl!),
+
+          // ── Double-tap zones (overlay on top of Chewie) ───────
+          // Left zone — seek -10s
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: screenW * 0.35,
+            child: GestureDetector(
+              onDoubleTap: _seekLeft,
+              behavior: HitTestBehavior.translucent,
+              child: AnimatedOpacity(
+                opacity: _showDoubleTapLeft ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.black38, Colors.transparent],
+                    ),
+                  ),
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.replay_10_rounded,
+                            color: Colors.white, size: 40),
+                        SizedBox(height: 4),
+                        Text('10 sec',
+                            style:
+                                TextStyle(color: Colors.white, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Right zone — seek +10s
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: screenW * 0.35,
+            child: GestureDetector(
+              onDoubleTap: _seekRight,
+              behavior: HitTestBehavior.translucent,
+              child: AnimatedOpacity(
+                opacity: _showDoubleTapRight ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Colors.transparent, Colors.black38],
+                    ),
+                  ),
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.forward_10_rounded,
+                            color: Colors.white, size: 40),
+                        SizedBox(height: 4),
+                        Text('10 sec',
+                            style:
+                                TextStyle(color: Colors.white, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Back button
+          Positioned(
+            top: 8,
+            left: 4,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white, size: 20),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVideoInfo() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(widget.track.title,
+            style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+                height: 1.3)),
+        const SizedBox(height: 6),
+        Row(children: [
+          Text(widget.track.channel,
+              style: const TextStyle(color: Color(0xFF888888), fontSize: 13)),
+          if (widget.track.viewCount > 0) ...[
+            const Text(' • ', style: TextStyle(color: Color(0xFF555555))),
+            Text(widget.track.viewCountLabel,
+                style: const TextStyle(color: Color(0xFF888888), fontSize: 12)),
+          ],
+        ]),
+        const SizedBox(height: 12),
+        // Like button
+        Consumer<MediaProvider>(
+          builder: (_, mp, __) => Row(children: [
+            GestureDetector(
+              onTap: () => mp.toggleLike(widget.track.ytVideoId),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: mp.isLiked(widget.track.ytVideoId)
+                      ? Colors.red.withOpacity(0.15)
+                      : const Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: mp.isLiked(widget.track.ytVideoId)
+                        ? Colors.redAccent
+                        : const Color(0xFF2A2A2A),
+                  ),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(
+                    mp.isLiked(widget.track.ytVideoId)
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                    color: mp.isLiked(widget.track.ytVideoId)
+                        ? Colors.redAccent
+                        : const Color(0xFF888888),
+                    size: 18,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    mp.isLiked(widget.track.ytVideoId) ? 'Liked' : 'Like',
+                    style: TextStyle(
+                        color: mp.isLiked(widget.track.ytVideoId)
+                            ? Colors.redAccent
+                            : const Color(0xFF888888),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ]),
+              ),
+            ),
+          ]),
+        ),
+        const Divider(color: Color(0xFF1E1E1E), height: 24),
+      ]),
+    );
+  }
+
+  Widget _buildAutoplayToggle() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+      child: Row(children: [
+        const Icon(Icons.playlist_play_rounded,
+            color: Color(0xFF888888), size: 20),
+        const SizedBox(width: 8),
+        const Text('Autoplay',
+            style: TextStyle(color: Color(0xFF888888), fontSize: 14)),
+        const Spacer(),
+        GestureDetector(
+          onTap: () => setState(() => _autoplay = !_autoplay),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 44,
+            height: 24,
+            decoration: BoxDecoration(
+              color: _autoplay ? _lime : const Color(0xFF2A2A2A),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 200),
+              alignment:
+                  _autoplay ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                width: 20,
+                height: 20,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  color: _autoplay ? const Color(0xFF0F0F0F) : Colors.white54,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  Suggested video tile (compact)
+// ══════════════════════════════════════════════════════════════════
+
+class _SuggestedTile extends StatelessWidget {
+  final Track track;
+  final VoidCallback onTap;
+
+  const _SuggestedTile({required this.track, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // Thumbnail
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: CachedNetworkImage(
+                  imageUrl: track.thumbnail,
+                  width: 120,
+                  height: 68,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(
+                    width: 120,
+                    height: 68,
+                    color: const Color(0xFF1A1A1A),
+                  ),
+                  errorWidget: (_, __, ___) => Container(
+                    width: 120,
+                    height: 68,
+                    color: const Color(0xFF1A1A1A),
+                    child: const Icon(Icons.play_circle_outline,
+                        color: Color(0xFF333333), size: 28),
+                  ),
+                ),
+              ),
+              if (track.durationSeconds > 0)
+                Positioned(
+                  bottom: 4,
+                  right: 4,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    child: Text(track.durationLabel,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              const Positioned.fill(
+                child: Center(
+                  child: Icon(Icons.play_arrow_rounded,
+                      color: Colors.white60, size: 24),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 10),
+          // Info
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(track.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                      height: 1.3)),
+              const SizedBox(height: 4),
+              Text(track.channel,
+                  style:
+                      const TextStyle(color: Color(0xFF666666), fontSize: 12)),
+            ]),
+          ),
+        ]),
       ),
     );
   }
@@ -285,7 +898,6 @@ class _TrendingTabState extends State<_TrendingTab> {
     return Consumer<MediaProvider>(
       builder: (_, mp, __) => Column(
         children: [
-          // Category chips
           SizedBox(
             height: 48,
             child: ListView.builder(
@@ -391,7 +1003,6 @@ class _SearchTabState extends State<_SearchTab> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Search bar
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
           child: Row(children: [
@@ -441,7 +1052,6 @@ class _SearchTabState extends State<_SearchTab> {
             ],
           ]),
         ),
-        // Type filter
         SizedBox(
           height: 44,
           child: ListView.builder(
@@ -491,7 +1101,6 @@ class _SearchTabState extends State<_SearchTab> {
             },
           ),
         ),
-        // Results
         Expanded(
           child: Consumer<MediaProvider>(
             builder: (_, mp, __) {
@@ -689,7 +1298,6 @@ class _VideoCard extends StatelessWidget {
                   ),
                 ),
               ),
-              // Duration badge
               if (track.durationSeconds > 0)
                 Positioned(
                   bottom: 8,
@@ -710,22 +1318,25 @@ class _VideoCard extends StatelessWidget {
                     ),
                   ),
                 ),
-              // Play overlay
               Positioned.fill(
                 child: Center(
                   child: Container(
                     width: 50,
                     height: 50,
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: Colors.black54,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.play_arrow_rounded,
-                        color: Colors.white, size: 30),
+                    child: Icon(
+                      track.category == 'music'
+                          ? Icons.music_note_rounded
+                          : Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 30,
+                    ),
                   ),
                 ),
               ),
-              // Rank badge
               if (rank != null)
                 Positioned(
                   top: 8,
@@ -760,9 +1371,7 @@ class _VideoCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          // Info row
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // Channel avatar placeholder
             CircleAvatar(
               radius: 18,
               backgroundColor: const Color(0xFF1A1A1A),
@@ -805,7 +1414,6 @@ class _VideoCard extends StatelessWidget {
                     ]),
                   ]),
             ),
-            // Like button
             Consumer<MediaProvider>(
               builder: (_, mp, __) => GestureDetector(
                 onTap: () => mp.toggleLike(track.ytVideoId),
@@ -831,7 +1439,7 @@ class _VideoCard extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  Inline Mini Player
+//  Inline Mini Audio Player
 // ══════════════════════════════════════════════════════════════════
 
 class _InlinePlayer extends StatelessWidget {
@@ -859,7 +1467,6 @@ class _InlinePlayer extends StatelessWidget {
           child: SafeArea(
             top: false,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              // Progress bar
               Consumer<PlayerProvider>(
                 builder: (_, p, __) {
                   final pos = p.position.inMilliseconds.toDouble();
@@ -916,7 +1523,6 @@ class _InlinePlayer extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Loading indicator or play/pause
                 if (player.status == PlayerStatus.loading)
                   const SizedBox(
                     width: 36,
@@ -955,18 +1561,19 @@ class _InlinePlayer extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  Full Player Screen
+//  Full Audio Player Screen (music only)
 // ══════════════════════════════════════════════════════════════════
 
-class FullPlayerScreen extends StatefulWidget {
+class FullAudioPlayerScreen extends StatefulWidget {
   final Track track;
-  const FullPlayerScreen({Key? key, required this.track}) : super(key: key);
+  const FullAudioPlayerScreen({Key? key, required this.track})
+      : super(key: key);
 
   @override
-  State<FullPlayerScreen> createState() => _FullPlayerScreenState();
+  State<FullAudioPlayerScreen> createState() => _FullAudioPlayerScreenState();
 }
 
-class _FullPlayerScreenState extends State<FullPlayerScreen> {
+class _FullAudioPlayerScreenState extends State<FullAudioPlayerScreen> {
   static const _bg = Color(0xFF0A0A0A);
   static const _lime = Color(0xFFE8FF6B);
 
@@ -1019,7 +1626,7 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                 ),
               ]),
             ),
-            // Thumbnail / artwork
+            // Album art
             Expanded(
               flex: 5,
               child: Padding(
@@ -1059,46 +1666,22 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                       const SizedBox(height: 4),
                       Text(widget.track.channel,
                           style: const TextStyle(
-                              color: Color(0xFF666666), fontSize: 14)),
+                              color: Color(0xFF555555), fontSize: 14)),
                     ],
-                  ),
-                ),
-                // Coins earned badge
-                Consumer<MediaProvider>(
-                  builder: (_, mp, __) => Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _lime.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _lime.withOpacity(0.3)),
-                    ),
-                    child: Column(children: [
-                      Text('${mp.dailyWatchEarned}',
-                          style: const TextStyle(
-                              color: _lime,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 16)),
-                      const Text('coins',
-                          style:
-                              TextStyle(color: Color(0xFF555555), fontSize: 9)),
-                    ]),
                   ),
                 ),
               ]),
             ),
             // Seek bar
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: StreamBuilder<Duration>(
                 stream: player.positionStream,
                 builder: (_, snap) {
                   final pos = snap.data ?? Duration.zero;
                   final dur = player.duration;
                   final total = dur.inMilliseconds.toDouble();
-                  final current = pos.inMilliseconds
-                      .toDouble()
-                      .clamp(0.0, total.isFinite && total > 0 ? total : 0.0);
+                  final current = pos.inMilliseconds.toDouble();
                   return Column(children: [
                     SliderTheme(
                       data: SliderThemeData(
@@ -1108,14 +1691,14 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                         overlayShape:
                             const RoundSliderOverlayShape(overlayRadius: 14),
                         activeTrackColor: _lime,
-                        inactiveTrackColor: const Color(0xFF222222),
+                        inactiveTrackColor: const Color(0xFF2A2A2A),
                         thumbColor: _lime,
                         overlayColor: _lime.withOpacity(0.2),
                       ),
                       child: Slider(
                         min: 0,
                         max: total > 0 ? total : 1,
-                        value: current,
+                        value: current.clamp(0, total > 0 ? total : 1),
                         onChanged: (v) =>
                             player.seek(Duration(milliseconds: v.toInt())),
                       ),
@@ -1144,7 +1727,6 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // Shuffle
                   IconButton(
                     icon: Icon(Icons.shuffle_rounded,
                         color:
@@ -1152,13 +1734,11 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                         size: 24),
                     onPressed: () => player.toggleShuffle(),
                   ),
-                  // Previous
                   IconButton(
                     icon: const Icon(Icons.skip_previous_rounded,
                         color: Colors.white, size: 32),
                     onPressed: () => player.previousTrack(),
                   ),
-                  // Play/Pause
                   GestureDetector(
                     onTap: () => player.togglePlayPause(),
                     child: Container(
@@ -1186,13 +1766,11 @@ class _FullPlayerScreenState extends State<FullPlayerScreen> {
                             ),
                     ),
                   ),
-                  // Next
                   IconButton(
                     icon: const Icon(Icons.skip_next_rounded,
                         color: Colors.white, size: 32),
                     onPressed: () => player.nextTrack(),
                   ),
-                  // Loop
                   IconButton(
                     icon: Icon(
                       player.loopMode == 'one'

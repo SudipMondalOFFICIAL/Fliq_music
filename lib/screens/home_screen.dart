@@ -482,7 +482,7 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
               onExpand: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => FullPlayerScreen(track: _playerTrack!),
+                  builder: (_) => FullAudioPlayerScreen(track: _playerTrack!),
                   fullscreenDialog: true,
                 ),
               ),

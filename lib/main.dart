@@ -48,35 +48,31 @@ Future<void> main() async {
     statusBarIconBrightness: Brightness.light,
   ));
 
+  // Portrait-only by default — video fullscreen will override per-screen
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
 
-  // TEMPORARILY DISABLED - Firebase testing
+  // ── Audio Background Service (required for background play) ───
+  try {
+    await initAudioBackground().timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {
+        debugPrint('[Main] AudioBackground init timeout — continuing anyway');
+      },
+    );
+    debugPrint('[Main] AudioBackground initialized');
+  } catch (e) {
+    debugPrint('[Main] AudioBackground init error: $e — continuing anyway');
+  }
+
+  // ── Firebase (optional — skip if google-services.json missing) ─
   // try {
-  //   await Firebase.initializeApp().timeout(
-  //     const Duration(seconds: 10),
-  //     onTimeout: () async {
-  //       debugPrint('[Main] Firebase init timeout — continuing anyway');
-  //       return Firebase.app();
-  //     },
-  //   );
+  //   await Firebase.initializeApp().timeout(const Duration(seconds: 10));
   //   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   // } catch (e) {
   //   debugPrint('[Main] Firebase init error: $e — continuing anyway');
-  // }
-
-  // TEMPORARILY DISABLED - Audio background testing
-  // try {
-  //   await initAudioBackground().timeout(
-  //     const Duration(seconds: 5),
-  //     onTimeout: () {
-  //       debugPrint('[Main] AudioBackground init timeout — continuing anyway');
-  //     },
-  //   );
-  // } catch (e) {
-  //   debugPrint('[Main] AudioBackground init error: $e — continuing anyway');
   // }
 
   final apiService = ApiService();
@@ -113,15 +109,6 @@ class FilqApp extends StatefulWidget {
 }
 
 class _FilqAppState extends State<FilqApp> {
-  @override
-  void initState() {
-    super.initState();
-    // TEMPORARILY DISABLED
-    // WidgetsBinding.instance.addPostFrameCallback((_) {
-    //   NotificationService.init(context);
-    // });
-  }
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
