@@ -1,26 +1,16 @@
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  download_service.dart — Audio & Video offline download         ║
-// ║  Place in: lib/services/download_service.dart                   ║
 // ╚══════════════════════════════════════════════════════════════════╝
-//
-// Strategy:
-//  Audio  → youtube_explode_dart extracts best .m4a stream → DIO downloads
-//  Video  → youtube_explode_dart extracts best muxed mp4   → DIO downloads
-//
-// Files saved to:  <appDocDir>/filq_downloads/<videoId>_audio.m4a
-//                  <appDocDir>/filq_downloads/<videoId>_video.mp4
-//
-// Backend is notified after successful download via /music/download/log.
-// Backend is notified on delete via DELETE /music/download/log.
 
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import '../models/track_model.dart';
 import 'api_service.dart';
 
-// ── Download result ──────────────────────────────────────────────────
 class DownloadResult {
   final bool success;
   final String? filePath;
@@ -35,22 +25,33 @@ class DownloadResult {
   });
 }
 
-// ── Progress callback type ───────────────────────────────────────────
 typedef DownloadProgressCallback = void Function(double progress);
-
-// ══════════════════════════════════════════════════════════════════════
-//  DownloadService
-// ══════════════════════════════════════════════════════════════════════
 
 class DownloadService {
   final ApiService _api;
   final Dio _dio = Dio();
   final YoutubeExplode _yt = YoutubeExplode();
-
-  // Active cancellation tokens — keyed by "videoId_type"
   final Map<String, CancelToken> _cancelTokens = {};
 
   DownloadService(this._api);
+
+  // ── Android storage permission (handles API 29/30/33+) ────────
+  Future<bool> _requestStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final info = await DeviceInfoPlugin().androidInfo;
+      final sdkInt = info.version.sdkInt;
+      if (sdkInt >= 30) {
+        // Android 11+: app-internal dirs don't need permission
+        return true;
+      } else {
+        final status = await Permission.storage.request();
+        return status.isGranted;
+      }
+    } catch (_) {
+      return true;
+    }
+  }
 
   // ── Directory ─────────────────────────────────────────────────────
   Future<Directory> _downloadsDir() async {
@@ -101,6 +102,11 @@ class DownloadService {
       return const DownloadResult(success: false, error: 'Already downloading');
     }
 
+    if (!await _requestStoragePermission()) {
+      return const DownloadResult(
+          success: false, error: 'Storage permission denied');
+    }
+
     final cancelToken = CancelToken();
     _cancelTokens[key] = cancelToken;
 
@@ -108,7 +114,6 @@ class DownloadService {
       final dir = await _downloadsDir();
       final savePath = _audioPath(dir, track.ytVideoId);
 
-      // Already exists — skip re-download
       if (File(savePath).existsSync()) {
         _cancelTokens.remove(key);
         final size = await File(savePath).length();
@@ -117,21 +122,18 @@ class DownloadService {
             success: true, filePath: savePath, fileSizeBytes: size);
       }
 
-      // ── Extract audio stream URL via youtube_explode_dart ─────────
       onProgress?.call(0.02);
       final manifest =
           await _yt.videos.streamsClient.getManifest(track.ytVideoId);
 
-      // Best audio: highest bitrate audio-only stream
       final audioStreams = manifest.audioOnly.sortByBitrate();
       if (audioStreams.isEmpty) {
         throw Exception('No audio streams available for this video');
       }
-      final streamInfo = audioStreams.last; // highest bitrate last
+      final streamInfo = audioStreams.last;
 
       onProgress?.call(0.05);
 
-      // ── Download ──────────────────────────────────────────────────
       await _dio.download(
         streamInfo.url.toString(),
         savePath,
@@ -152,7 +154,6 @@ class DownloadService {
       );
 
       onProgress?.call(1.0);
-
       final size = await File(savePath).length();
       await _logDownload(track, 'audio', savePath, size);
       _cancelTokens.remove(key);
@@ -172,7 +173,7 @@ class DownloadService {
     }
   }
 
-  // ── Video download (.mp4) ─────────────────────────────────────────
+  // ── Video download (.mp4 muxed, max 720p) ─────────────────────────
   Future<DownloadResult> downloadVideo(
     Track track, {
     DownloadProgressCallback? onProgress,
@@ -180,6 +181,11 @@ class DownloadService {
     final key = '${track.ytVideoId}_video';
     if (_cancelTokens.containsKey(key)) {
       return const DownloadResult(success: false, error: 'Already downloading');
+    }
+
+    if (!await _requestStoragePermission()) {
+      return const DownloadResult(
+          success: false, error: 'Storage permission denied');
     }
 
     final cancelToken = CancelToken();
@@ -201,13 +207,11 @@ class DownloadService {
       final manifest =
           await _yt.videos.streamsClient.getManifest(track.ytVideoId);
 
-      // Prefer muxed (audio+video combined) — simplest offline playback
-      // Fallback: highest quality muxed stream
       final muxed = manifest.muxed.sortByVideoQuality();
       if (muxed.isEmpty) {
         throw Exception('No muxed video streams available');
       }
-      final streamInfo = muxed.last; // best quality
+      final streamInfo = muxed.last;
 
       onProgress?.call(0.05);
 
@@ -231,7 +235,6 @@ class DownloadService {
       );
 
       onProgress?.call(1.0);
-
       final size = await File(savePath).length();
       await _logDownload(track, 'video', savePath, size);
       _cancelTokens.remove(key);
@@ -273,7 +276,6 @@ class DownloadService {
     int audio = 0;
     int video = 0;
     if (!await dir.exists()) return {'audio': 0, 'video': 0, 'total': 0};
-
     await for (final entity in dir.list()) {
       if (entity is File) {
         final size = await entity.length();
@@ -292,7 +294,6 @@ class DownloadService {
     final dir = await _downloadsDir();
     final list = <Map<String, dynamic>>[];
     if (!await dir.exists()) return list;
-
     await for (final entity in dir.list()) {
       if (entity is File) {
         final name = entity.path.split('/').last;
@@ -318,7 +319,6 @@ class DownloadService {
     return list;
   }
 
-  // ── Private helpers ───────────────────────────────────────────────
   Future<void> _logDownload(
       Track track, String fileType, String filePath, int fileSize) async {
     try {
@@ -333,8 +333,6 @@ class DownloadService {
         fileSizeBytes: fileSize,
       );
     } catch (e) {
-      // Non-fatal — log and continue
-      // ignore: avoid_print
       print('[DownloadService] backend log failed: $e');
     }
   }

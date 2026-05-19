@@ -22,6 +22,16 @@ Future<void> initAudioBackground() async {
   );
 }
 
+// ── URL cache with TTL ────────────────────────────────────────────
+class _CachedUrl {
+  final String url;
+  final DateTime fetchedAt;
+  static const _ttl = Duration(hours: 5); // YouTube URLs expire ~6h
+
+  _CachedUrl(this.url) : fetchedAt = DateTime.now();
+  bool get isExpired => DateTime.now().difference(fetchedAt) > _ttl;
+}
+
 // ═════════════════════════════════════════════════════════════════
 //  PlayerService — singleton
 // ═════════════════════════════════════════════════════════════════
@@ -34,23 +44,22 @@ class PlayerService {
   final YoutubeExplode _yt = YoutubeExplode();
   final Dio _dio = Dio();
 
-  // Cache stream URLs to avoid re-fetching on pause/resume
-  final Map<String, String> _audioUrlCache = {};
-  final Map<String, String> _videoUrlCache = {};
+  // Cache stream URLs with expiry (YouTube URLs expire ~6h)
+  final Map<String, _CachedUrl> _audioUrlCache = {};
+  final Map<String, _CachedUrl> _videoUrlCache = {};
 
   AudioPlayer get player => _player;
 
   // ── Audio stream URL ──────────────────────────────────────────
   Future<String?> getAudioStreamUrl(String videoId) async {
-    if (_audioUrlCache.containsKey(videoId)) {
-      return _audioUrlCache[videoId];
-    }
+    final cached = _audioUrlCache[videoId];
+    if (cached != null && !cached.isExpired) return cached.url;
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(videoId);
       final streams = manifest.audioOnly;
       if (streams.isEmpty) return null;
       final url = streams.withHighestBitrate().url.toString();
-      _audioUrlCache[videoId] = url;
+      _audioUrlCache[videoId] = _CachedUrl(url);
       return url;
     } catch (e) {
       print('[PlayerService] audio stream fetch error: $e');
@@ -60,16 +69,14 @@ class PlayerService {
 
   // ── Video stream URL (muxed = audio+video) ────────────────────
   Future<String?> getVideoStreamUrl(String videoId) async {
-    if (_videoUrlCache.containsKey(videoId)) {
-      return _videoUrlCache[videoId];
-    }
+    final cached = _videoUrlCache[videoId];
+    if (cached != null && !cached.isExpired) return cached.url;
     try {
       final manifest = await _yt.videos.streamsClient.getManifest(videoId);
       final streams = manifest.muxed;
       if (streams.isEmpty) return null;
       final sorted = streams.toList()
         ..sort((a, b) => b.videoQuality.index.compareTo(a.videoQuality.index));
-      // Prefer 720p or lower for smooth playback
       MuxedStreamInfo best = sorted.first;
       for (final s in sorted) {
         if (s.videoQualityLabel.contains('720') ||
@@ -80,7 +87,7 @@ class PlayerService {
         }
       }
       final url = best.url.toString();
-      _videoUrlCache[videoId] = url;
+      _videoUrlCache[videoId] = _CachedUrl(url);
       return url;
     } catch (e) {
       print('[PlayerService] video stream error: $e');

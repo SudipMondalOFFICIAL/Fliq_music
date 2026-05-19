@@ -10,8 +10,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'services/upload_service.dart';
-import 'services/notification_service.dart';
 import 'services/player_service.dart';
+import 'services/download_service.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/earn_provider.dart';
 import 'providers/task_provider.dart';
@@ -19,6 +19,7 @@ import 'providers/support_provider.dart';
 import 'providers/app_config_provider.dart';
 import 'providers/media_provider.dart';
 import 'providers/player_provider.dart';
+import 'providers/download_provider.dart';
 
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
@@ -34,6 +35,8 @@ import 'screens/profile_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/media_screen.dart';
 import 'screens/leaderboard_screen.dart';
+import 'screens/downloads_screen.dart';
+import 'screens/reels_screen.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -89,6 +92,7 @@ Future<void> main() async {
       Provider<ApiService>.value(value: apiService),
       Provider<AuthService>.value(value: authService),
       Provider<UploadService>(create: (_) => UploadService(apiService)),
+      Provider<DownloadService>(create: (_) => DownloadService(apiService)),
       ChangeNotifierProvider(create: (_) => AppConfigProvider(apiService)),
       ChangeNotifierProvider(create: (_) => WalletProvider(apiService)),
       ChangeNotifierProvider(create: (_) => EarnProvider()),
@@ -97,6 +101,10 @@ Future<void> main() async {
       ChangeNotifierProvider(create: (_) => LeaderboardProvider(apiService)),
       ChangeNotifierProvider(create: (_) => MediaProvider(apiService)),
       ChangeNotifierProvider(create: (_) => PlayerProvider()),
+      ChangeNotifierProxyProvider<DownloadService, DownloadProvider>(
+        create: (ctx) => DownloadProvider(ctx.read<DownloadService>()),
+        update: (ctx, svc, prev) => prev ?? DownloadProvider(svc),
+      ),
     ],
     child: const FilqApp(),
   ));
@@ -148,6 +156,8 @@ class _FilqAppState extends State<FilqApp> {
         '/history': (_) => const HistoryScreen(),
         '/leaderboard': (_) => const LeaderboardScreen(),
         '/media': (_) => const MediaScreen(),
+        '/downloads': (_) => const DownloadsScreen(),
+        '/reels': (_) => const ReelsScreen(),
       },
     );
   }
