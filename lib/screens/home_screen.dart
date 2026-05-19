@@ -1,7 +1,6 @@
 // home_screen.dart
 // YouTube-style clean home: search bar on top, video feed below
 
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -16,6 +15,8 @@ import 'referral_screen.dart';
 import 'withdraw_screen.dart';
 import 'profile_screen.dart';
 import 'media_screen.dart';
+import 'search_screen.dart';
+import 'notification_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -134,11 +135,7 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
   static const _border = Color(0xFF1E1E1E);
   static const _card = Color(0xFF141414);
 
-  final _searchCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
-  final _focusNode = FocusNode();
-  bool _searchActive = false;
-  Timer? _debounce;
 
   final _categories = ['All', '🎵 Music', '🎮 Gaming', '📰 News', '⚽ Sports'];
   int _selectedCat = 0;
@@ -150,40 +147,15 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
       final mp = context.read<MediaProvider>();
       if (_scrollCtrl.position.pixels >=
           _scrollCtrl.position.maxScrollExtent - 300) {
-        if (!_searchActive) mp.loadMoreFeed();
+        mp.loadMoreFeed();
       }
-    });
-    _focusNode.addListener(() {
-      setState(() => _searchActive = _focusNode.hasFocus);
     });
   }
 
   @override
   void dispose() {
-    _searchCtrl.dispose();
     _scrollCtrl.dispose();
-    _focusNode.dispose();
-    _debounce?.cancel();
     super.dispose();
-  }
-
-  void _onSearchChanged(String q) {
-    setState(() {}); // update suffix icon
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), () {
-      if (q.trim().isNotEmpty) {
-        context.read<MediaProvider>().search(q.trim(), type: 'any');
-      } else {
-        context.read<MediaProvider>().clearSearch();
-      }
-    });
-  }
-
-  void _clearSearch() {
-    _searchCtrl.clear();
-    _focusNode.unfocus();
-    context.read<MediaProvider>().clearSearch();
-    setState(() => _searchActive = false);
   }
 
   void _openPlayer(Track track) {
@@ -257,6 +229,26 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
                       ]),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  // Notification icon
+                  GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const NotificationScreen()),
+                    ),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: _card,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _border),
+                      ),
+                      child: const Icon(Icons.notifications_outlined,
+                          color: Colors.white, size: 18),
+                    ),
+                  ),
                 ]),
               ),
 
@@ -265,115 +257,86 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
               // ── Search Bar ──────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(children: [
-                  Expanded(
+                child: GestureDetector(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SearchScreen()),
+                  ),
+                  child: AbsorbPointer(
                     child: Container(
                       height: 46,
                       decoration: BoxDecoration(
                         color: _card,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color:
-                              _searchActive ? _lime.withOpacity(0.5) : _border,
-                        ),
+                        border: Border.all(color: _border),
                       ),
-                      child: TextField(
-                        controller: _searchCtrl,
-                        focusNode: _focusNode,
-                        onChanged: _onSearchChanged,
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText: 'Search songs, videos, channels...',
-                          hintStyle: const TextStyle(
-                              color: Color(0xFF444444), fontSize: 13),
-                          prefixIcon: const Icon(Icons.search_rounded,
-                              color: Color(0xFF555555), size: 20),
-                          suffixIcon: _searchCtrl.text.isNotEmpty
-                              ? GestureDetector(
-                                  onTap: _clearSearch,
-                                  child: const Icon(Icons.close_rounded,
-                                      color: Color(0xFF555555), size: 18),
-                                )
-                              : null,
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 14),
-                        ),
-                      ),
+                      child: const Row(children: [
+                        SizedBox(width: 14),
+                        Icon(Icons.search_rounded,
+                            color: Color(0xFF555555), size: 20),
+                        SizedBox(width: 8),
+                        Text('Search songs, videos, channels...',
+                            style: TextStyle(
+                                color: Color(0xFF444444), fontSize: 13)),
+                      ]),
                     ),
                   ),
-                  if (_searchActive) ...[
-                    const SizedBox(width: 10),
-                    GestureDetector(
-                      onTap: _clearSearch,
-                      child: const Text('Cancel',
-                          style: TextStyle(
-                              color: _lime,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600)),
-                    ),
-                  ],
-                ]),
+                ),
               ),
 
               // ── Category chips ──────────────────────────────────
-              if (!_searchActive) ...[
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 34,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _categories.length,
-                    itemBuilder: (_, i) {
-                      final sel = _selectedCat == i;
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() => _selectedCat = i);
-                          if (i == 0) {
-                            context
-                                .read<MediaProvider>()
-                                .loadFeed(refresh: true);
-                          } else {
-                            final cats = [
-                              'any',
-                              'music',
-                              'gaming',
-                              'news',
-                              'sports'
-                            ];
-                            context
-                                .read<MediaProvider>()
-                                .loadTrending(category: cats[i]);
-                          }
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          margin: const EdgeInsets.only(right: 8),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: sel ? _lime : _card,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: sel ? _lime : _border),
-                          ),
-                          child: Text(
-                            _categories[i],
-                            style: TextStyle(
-                              color: sel
-                                  ? const Color(0xFF0F0F0F)
-                                  : const Color(0xFF888888),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 34,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _categories.length,
+                  itemBuilder: (_, i) {
+                    final sel = _selectedCat == i;
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() => _selectedCat = i);
+                        if (i == 0) {
+                          context.read<MediaProvider>().loadFeed(refresh: true);
+                        } else {
+                          final cats = [
+                            'any',
+                            'music',
+                            'gaming',
+                            'news',
+                            'sports'
+                          ];
+                          context
+                              .read<MediaProvider>()
+                              .loadTrending(category: cats[i]);
+                        }
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: sel ? _lime : _card,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: sel ? _lime : _border),
+                        ),
+                        child: Text(
+                          _categories[i],
+                          style: TextStyle(
+                            color: sel
+                                ? const Color(0xFF0F0F0F)
+                                : const Color(0xFF888888),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
                 ),
-              ],
+              ),
 
               const SizedBox(height: 6),
             ]),
@@ -383,35 +346,6 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
           Expanded(
             child: Consumer<MediaProvider>(
               builder: (_, mp, __) {
-                // Search mode
-                if (_searchActive || _searchCtrl.text.isNotEmpty) {
-                  if (mp.searchLoading) return const _ShimmerFeed();
-                  if (_searchCtrl.text.isEmpty || mp.lastQuery.isEmpty) {
-                    return _SearchSuggestionsView(
-                      onTap: (q) {
-                        _searchCtrl.text = q;
-                        setState(() {});
-                        mp.search(q, type: 'any');
-                      },
-                    );
-                  }
-                  if (mp.searchResults.isEmpty) {
-                    return _EmptyState(
-                      icon: '🔍',
-                      msg: 'No results for "${mp.lastQuery}"',
-                      onRetry: () => mp.search(mp.lastQuery, type: 'any'),
-                    );
-                  }
-                  return ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(0, 8, 0, 120),
-                    itemCount: mp.searchResults.length,
-                    itemBuilder: (_, i) => _VideoCard(
-                      track: mp.searchResults[i],
-                      onTap: () => _openPlayer(mp.searchResults[i]),
-                    ),
-                  );
-                }
-
                 // Feed / Trending mode
                 final isAll = _selectedCat == 0;
                 final tracks = isAll ? mp.feed : mp.trending;

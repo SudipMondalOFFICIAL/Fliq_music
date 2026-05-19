@@ -37,6 +37,8 @@ import 'screens/media_screen.dart';
 import 'screens/leaderboard_screen.dart';
 import 'screens/downloads_screen.dart';
 import 'screens/reels_screen.dart';
+import 'screens/search_screen.dart';
+import 'screens/notification_screen.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -158,6 +160,8 @@ class _FilqAppState extends State<FilqApp> {
         '/media': (_) => const MediaScreen(),
         '/downloads': (_) => const DownloadsScreen(),
         '/reels': (_) => const ReelsScreen(),
+        '/search': (_) => const SearchScreen(),
+        '/notifications': (_) => const NotificationScreen(),
       },
     );
   }
