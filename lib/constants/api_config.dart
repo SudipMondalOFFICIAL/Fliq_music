@@ -68,6 +68,10 @@ class ApiConfig {
   static const String musicLikesEndpoint = "/music/likes";
   static const String musicRecommendationsEndpoint = "/music/recommendations";
 
+  // ── Downloads ────────────────────────────────────────────────
+  static const String downloadLogEndpoint = "/music/download/log";
+  static const String myDownloadsEndpoint = "/music/downloads";
+
   // ── URL builder helpers ───────────────────────────────────────
 
   static String taskProgressEndpoint(String taskId) =>

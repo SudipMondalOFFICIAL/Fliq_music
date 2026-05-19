@@ -583,8 +583,14 @@ class ApiService {
         .toList();
   }
 
-  Future<Map<String, dynamic>> getMusicFeed({int page = 1}) async {
-    final params = <String, String>{'page': page.toString()};
+  Future<Map<String, dynamic>> getMusicFeed({
+    int page = 1,
+    bool refresh = false,
+  }) async {
+    final params = <String, String>{
+      'page': page.toString(),
+      if (refresh) 'refresh': 'true',
+    };
     final uri = Uri.parse(
       '${ApiConfig.baseUrl}${ApiConfig.musicFeedEndpoint}',
     ).replace(queryParameters: params);
@@ -705,6 +711,71 @@ class ApiService {
     );
     _check(r, 'Get watch rank failed');
     return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  DOWNLOADS
+  // ══════════════════════════════════════════════════════════════
+
+  /// Backend কে জানাও যে user একটা track download করেছে।
+  Future<void> logDownload({
+    required String ytVideoId,
+    required String title,
+    required String channel,
+    required String thumbnail,
+    required int durationSeconds,
+    required String fileType, // 'audio' | 'video'
+    required String filePath,
+    required int fileSizeBytes,
+  }) async {
+    final r = await _httpClient.post(
+      Uri.parse('${ApiConfig.baseUrl}${ApiConfig.downloadLogEndpoint}'),
+      headers: _headers(),
+      body: jsonEncode({
+        'yt_video_id': ytVideoId,
+        'title': title,
+        'channel': channel,
+        'thumbnail': thumbnail,
+        'duration_seconds': durationSeconds,
+        'file_type': fileType,
+        'file_path': filePath,
+        'file_size_bytes': fileSizeBytes,
+      }),
+    );
+    _check(r, 'Download log failed');
+  }
+
+  /// Backend থেকে download record মুছো (user deleted the file).
+  Future<void> removeDownloadLog(String ytVideoId,
+      {String fileType = 'audio'}) async {
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}${ApiConfig.downloadLogEndpoint}',
+    ).replace(queryParameters: {
+      'yt_video_id': ytVideoId,
+      'file_type': fileType,
+    });
+    final r = await _httpClient.delete(uri, headers: _headers());
+    _check(r, 'Remove download log failed');
+  }
+
+  /// User এর সব server-side download records পাও।
+  Future<List<Map<String, dynamic>>> getMyDownloads({
+    String? fileType, // null = all
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final params = <String, String>{
+      'limit': limit.toString(),
+      'offset': offset.toString(),
+      if (fileType != null) 'file_type': fileType,
+    };
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}${ApiConfig.myDownloadsEndpoint}',
+    ).replace(queryParameters: params);
+    final r = await _httpClient.get(uri, headers: _headers());
+    _check(r, 'Get downloads failed');
+    final data = jsonDecode(r.body) as Map<String, dynamic>;
+    return (data['downloads'] as List? ?? []).cast<Map<String, dynamic>>();
   }
 
   void dispose() => _httpClient.close();
