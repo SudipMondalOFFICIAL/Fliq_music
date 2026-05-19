@@ -9,7 +9,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../models/track_model.dart';
 import '../providers/media_provider.dart';
-import '../providers/player_provider.dart';
 import '../providers/wallet_provider.dart';
 import 'earn_screen.dart';
 import 'reels_screen.dart';
@@ -144,9 +143,6 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
   final _categories = ['All', '🎵 Music', '🎮 Gaming', '📰 News', '⚽ Sports'];
   int _selectedCat = 0;
 
-  Track? _playerTrack;
-  bool _playerVisible = false;
-
   @override
   void initState() {
     super.initState();
@@ -191,16 +187,17 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
   }
 
   void _openPlayer(Track track) {
-    setState(() {
-      _playerTrack = track;
-      _playerVisible = true;
-    });
-    context.read<PlayerProvider>().playTrack(track);
-  }
-
-  void _closePlayer() {
-    setState(() => _playerVisible = false);
-    context.read<PlayerProvider>().clearQueue();
+    final mp = context.read<MediaProvider>();
+    final all = [...mp.feed, ...mp.trending, ...mp.searchResults];
+    final suggested =
+        all.where((t) => t.ytVideoId != track.ytVideoId).take(20).toList();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            VideoPlayerScreen(track: track, suggestedTracks: suggested),
+      ),
+    );
   }
 
   @override
@@ -474,20 +471,6 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
               },
             ),
           ),
-
-          // ── Mini Player ─────────────────────────────────────────
-          if (_playerVisible && _playerTrack != null)
-            _MiniPlayer(
-              track: _playerTrack!,
-              onClose: _closePlayer,
-              onExpand: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => FullAudioPlayerScreen(track: _playerTrack!),
-                  fullscreenDialog: true,
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -714,121 +697,6 @@ class _SearchSuggestionsView extends StatelessWidget {
 // ══════════════════════════════════════════════════════════════════
 //  Mini Player
 // ══════════════════════════════════════════════════════════════════
-
-class _MiniPlayer extends StatelessWidget {
-  final Track track;
-  final VoidCallback onClose;
-  final VoidCallback onExpand;
-
-  const _MiniPlayer(
-      {required this.track, required this.onClose, required this.onExpand});
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<PlayerProvider>(
-      builder: (_, player, __) => GestureDetector(
-        onTap: onExpand,
-        child: Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF141414),
-            border: Border(top: BorderSide(color: Color(0xFF1E1E1E))),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: SafeArea(
-            top: false,
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Consumer<PlayerProvider>(
-                builder: (_, p, __) {
-                  final pos = p.position.inMilliseconds.toDouble();
-                  final dur = p.duration.inMilliseconds.toDouble();
-                  final progress = dur > 0 ? (pos / dur).clamp(0.0, 1.0) : 0.0;
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(2),
-                    child: LinearProgressIndicator(
-                      value: progress,
-                      backgroundColor: const Color(0xFF1E1E1E),
-                      valueColor:
-                          const AlwaysStoppedAnimation(Color(0xFFE8FF6B)),
-                      minHeight: 2,
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
-              Row(children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: CachedNetworkImage(
-                    imageUrl: track.thumbnail,
-                    width: 44,
-                    height: 44,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => Container(
-                      width: 44,
-                      height: 44,
-                      color: const Color(0xFF1A1A1A),
-                      child: const Icon(Icons.music_note,
-                          color: Color(0xFF444444)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(track.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13)),
-                      Text(track.channel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Color(0xFF666666), fontSize: 11)),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (player.status == PlayerStatus.loading)
-                  const SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: CircularProgressIndicator(
-                        color: Color(0xFFE8FF6B), strokeWidth: 2),
-                  )
-                else
-                  IconButton(
-                    onPressed: () => player.togglePlayPause(),
-                    icon: Icon(
-                      player.isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 28,
-                    ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                const SizedBox(width: 4),
-                IconButton(
-                  onPressed: onClose,
-                  icon: const Icon(Icons.close_rounded,
-                      color: Color(0xFF555555), size: 20),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ]),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 // ══════════════════════════════════════════════════════════════════
 //  Shimmer Loading
