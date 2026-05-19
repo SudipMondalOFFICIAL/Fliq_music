@@ -67,9 +67,12 @@ class PlayerProvider extends ChangeNotifier {
       notifyListeners();
     });
 
+    // FIX: position stream এ notifyListeners() সরানো হয়েছে।
+    // Mini player এ StreamBuilder সরাসরি positionStream listen করে,
+    // তাই এখানে প্রতি 200ms notifyListeners() দিলে পুরো widget tree rebuild হয় — massive lag।
     _playerService.player.positionStream.listen((position) {
       _position = position;
-      notifyListeners();
+      // notifyListeners() intentionally removed — prevents rebuild storm
     });
 
     _playerService.player.playingStream.listen((playing) {

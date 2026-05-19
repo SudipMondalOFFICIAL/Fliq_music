@@ -248,6 +248,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   bool _showDoubleTapRight = false;
   Timer? _doubleTapTimer;
 
+  // FIX: Fullscreen state tracking
+  bool _isFullscreen = false;
+
+  // FIX: Quality options — YouTube player flags
+  final List<Map<String, dynamic>> _qualityOptions = [
+    {'label': 'Auto', 'hd': false},
+    {'label': 'HD 720p', 'hd': true},
+  ];
+  int _selectedQuality = 0; // 0 = Auto, 1 = HD
+
   // Track watch time for coin earning
   Timer? _watchTimer;
   int _watchedSeconds = 0;
@@ -268,6 +278,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       _error = null;
       _watchedSeconds = 0;
       _coinLogged = false;
+      _isFullscreen = false; // FIX: fullscreen reset on new video
     });
 
     // Dispose previous
@@ -332,6 +343,55 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     }
   }
 
+  // FIX: Fullscreen toggle — landscape/portrait orientation
+  void _toggleFullscreen() {
+    setState(() => _isFullscreen = !_isFullscreen);
+    if (_isFullscreen) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
+  }
+
+  // FIX: Quality change — recreates controller with forceHD flag
+  void _changeQuality(int index) {
+    if (_selectedQuality == index) return;
+    setState(() => _selectedQuality = index);
+    final currentPos = _ytCtrl?.value.position ?? Duration.zero;
+    final videoId = widget.track.ytVideoId;
+
+    _ytCtrl?.removeListener(_onPlayerStateChange);
+    _ytCtrl?.dispose();
+
+    _ytCtrl = YoutubePlayerController(
+      initialVideoId: videoId,
+      flags: YoutubePlayerFlags(
+        autoPlay: true,
+        mute: false,
+        disableDragSeek: false,
+        loop: false,
+        forceHD: index == 1, // HD 720p
+        enableCaption: false,
+      ),
+    );
+    _ytCtrl!.addListener(_onPlayerStateChange);
+    // Seek to previous position after ready
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted && currentPos.inSeconds > 0) {
+        _ytCtrl?.seekTo(currentPos);
+      }
+    });
+    setState(() {});
+  }
+
   void _playNext() {
     if (widget.suggestedTracks.isEmpty) return;
     final next = widget.suggestedTracks.first;
@@ -384,7 +444,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     }
     _ytCtrl?.removeListener(_onPlayerStateChange);
     _ytCtrl?.dispose();
-    // Restore portrait after leaving video screen
+    // FIX: Always restore portrait + system UI on leave
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -429,6 +489,58 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         },
       ),
       builder: (context, player) {
+        // FIX: fullscreen mode — video takes entire screen
+        if (_isFullscreen) {
+          return Scaffold(
+            backgroundColor: Colors.black,
+            body: Stack(
+              children: [
+                Center(child: player),
+                // Exit fullscreen button
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: SafeArea(
+                    child: GestureDetector(
+                      onTap: _toggleFullscreen,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.fullscreen_exit_rounded,
+                            color: Colors.white, size: 24),
+                      ),
+                    ),
+                  ),
+                ),
+                // Back button
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: SafeArea(
+                    child: GestureDetector(
+                      onTap: () {
+                        _toggleFullscreen();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
         return Scaffold(
           backgroundColor: _bg,
           body: SafeArea(
@@ -582,7 +694,140 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               onPressed: () => Navigator.pop(context),
             ),
           ),
+
+          // FIX: Fullscreen + Quality buttons (bottom-right)
+          Positioned(
+            bottom: 6,
+            right: 6,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Quality selector button
+                GestureDetector(
+                  onTap: () => _showQualitySheet(context),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.settings_rounded,
+                            color: Colors.white, size: 14),
+                        const SizedBox(width: 3),
+                        Text(
+                          _qualityOptions[_selectedQuality]['label'] as String,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // Fullscreen button
+                GestureDetector(
+                  onTap: _toggleFullscreen,
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(
+                      _isFullscreen
+                          ? Icons.fullscreen_exit_rounded
+                          : Icons.fullscreen_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  // FIX: Quality sheet — bottom modal
+  void _showQualitySheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF141414),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Video Quality',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            ..._qualityOptions.asMap().entries.map((e) {
+              final i = e.key;
+              final opt = e.value;
+              final selected = _selectedQuality == i;
+              return GestureDetector(
+                onTap: () {
+                  Navigator.pop(context);
+                  _changeQuality(i);
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? _lime.withOpacity(0.15)
+                        : const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: selected
+                          ? _lime.withOpacity(0.5)
+                          : Colors.transparent,
+                    ),
+                  ),
+                  child: Row(children: [
+                    Icon(
+                      opt['hd'] as bool
+                          ? Icons.hd_rounded
+                          : Icons.auto_fix_high_rounded,
+                      color: selected ? _lime : const Color(0xFF888888),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      opt['label'] as String,
+                      style: TextStyle(
+                        color: selected ? _lime : Colors.white,
+                        fontWeight:
+                            selected ? FontWeight.w700 : FontWeight.w400,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (selected)
+                      const Icon(Icons.check_rounded, color: _lime, size: 18),
+                  ]),
+                ),
+              );
+            }),
+            const SizedBox(height: 4),
+          ],
+        ),
       ),
     );
   }

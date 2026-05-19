@@ -243,6 +243,7 @@ class _ReelItem extends StatefulWidget {
 class _ReelItemState extends State<_ReelItem> {
   YoutubePlayerController? _ctrl;
   bool _ready = false;
+  bool _isPaused = false; // FIX: tap-to-pause state
 
   // FIX: coin badge এ actual earned amount দেখাবে, hardcoded '+2' না
   int _coinBadgeAmount = 0;
@@ -273,10 +274,22 @@ class _ReelItemState extends State<_ReelItem> {
     }
   }
 
+  void _togglePlayPause() {
+    if (_ctrl == null) return;
+    if (_ctrl!.value.isPlaying) {
+      _ctrl!.pause();
+      if (mounted) setState(() => _isPaused = true);
+    } else {
+      _ctrl!.play();
+      if (mounted) setState(() => _isPaused = false);
+    }
+  }
+
   void _initPlayer() {
     _pauseAndDispose(); // আগের player clean করো
     _watchedSecs = 0;
     _coinLogged = false;
+    _isPaused = false; // FIX: pause state reset
 
     final ctrl = YoutubePlayerController(
       initialVideoId: widget.track.ytVideoId,
@@ -419,23 +432,52 @@ class _ReelItemState extends State<_ReelItem> {
 
           // ── YouTube Player ────────────────────────────────────
           if (_ctrl != null && widget.isActive)
-            YoutubePlayerBuilder(
-              player: YoutubePlayer(
-                controller: _ctrl!,
-                showVideoProgressIndicator: false,
-                onReady: () {
-                  if (mounted) setState(() => _ready = true);
-                },
-              ),
-              builder: (ctx, player) => SizedBox(
-                width: size.width,
-                height: size.height,
-                child: FittedBox(
-                  fit: BoxFit.cover,
+            // FIX: RepaintBoundary — player repaint হলে বাকি widgets rebuild হবে না
+            RepaintBoundary(
+              child: YoutubePlayerBuilder(
+                player: YoutubePlayer(
+                  controller: _ctrl!,
+                  showVideoProgressIndicator: false,
+                  onReady: () {
+                    if (mounted) setState(() => _ready = true);
+                  },
+                ),
+                builder: (ctx, player) => GestureDetector(
+                  // FIX: tap করলে play/pause toggle হবে
+                  onTap: _togglePlayPause,
                   child: SizedBox(
                     width: size.width,
-                    height: size.width * 16 / 9,
-                    child: player,
+                    height: size.height,
+                    child: FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: size.width,
+                        height: size.width * 16 / 9,
+                        child: player,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // ── Pause icon overlay (shows when paused) ────────────
+          if (_isPaused && _ready)
+            Center(
+              child: AnimatedOpacity(
+                opacity: _isPaused ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.pause_rounded,
+                    color: Colors.white,
+                    size: 38,
                   ),
                 ),
               ),

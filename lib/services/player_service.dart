@@ -21,7 +21,7 @@ Future<void> initAudioBackground() async {
     androidNotificationChannelId: 'com.filq.audio',
     androidNotificationChannelName: 'Filq Music',
     androidNotificationOngoing: true,
-    androidStopForegroundOnPause: true,
+    androidStopForegroundOnPause: false,
   );
 }
 
@@ -106,9 +106,21 @@ class PlayerService {
   // ── Play a track (audio — used for background play) ───────────
   Future<bool> playTrack(Track track, {bool isVideo = false}) async {
     try {
-      if (track.localPath != null && File(track.localPath!).existsSync()) {
+      // FIX: check both old and new file naming for backward compatibility
+      String? localPath = track.localPath;
+      if (localPath == null) {
+        final dir = await getApplicationDocumentsDirectory();
+        final newPath =
+            '${dir.path}/filq_downloads/${track.ytVideoId}_audio.m4a';
+        final oldPath = '${dir.path}/filq_downloads/${track.ytVideoId}.m4a';
+        if (File(newPath).existsSync())
+          localPath = newPath;
+        else if (File(oldPath).existsSync()) localPath = oldPath;
+      }
+
+      if (localPath != null && File(localPath).existsSync()) {
         await _player.setAudioSource(
-          AudioSource.file(track.localPath!, tag: _mediaItem(track)),
+          AudioSource.file(localPath, tag: _mediaItem(track)),
         );
         await _player.play();
         return true;
@@ -184,7 +196,8 @@ class PlayerService {
       final filqDir = Directory('${dir.path}/filq_downloads');
       if (!filqDir.existsSync()) filqDir.createSync(recursive: true);
 
-      final filePath = '${filqDir.path}/${track.ytVideoId}.m4a';
+      // FIX: path convention aligned with download_service.dart → ${id}_audio.m4a
+      final filePath = '${filqDir.path}/${track.ytVideoId}_audio.m4a';
 
       // Already downloaded — return immediately
       if (File(filePath).existsSync()) return filePath;
@@ -241,15 +254,21 @@ class PlayerService {
   Future<void> deleteDownload(String ytVideoId) async {
     try {
       final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/filq_downloads/$ytVideoId.m4a');
-      if (file.existsSync()) file.deleteSync();
+      // FIX: check both old and new naming (backward compat)
+      final fileNew = File('${dir.path}/filq_downloads/${ytVideoId}_audio.m4a');
+      final fileOld = File('${dir.path}/filq_downloads/$ytVideoId.m4a');
+      if (fileNew.existsSync()) fileNew.deleteSync();
+      if (fileOld.existsSync()) fileOld.deleteSync();
     } catch (_) {}
   }
 
   Future<bool> isDownloaded(String ytVideoId) async {
     try {
       final dir = await getApplicationDocumentsDirectory();
-      return File('${dir.path}/filq_downloads/$ytVideoId.m4a').existsSync();
+      // FIX: check both naming conventions
+      final newPath = '${dir.path}/filq_downloads/${ytVideoId}_audio.m4a';
+      final oldPath = '${dir.path}/filq_downloads/$ytVideoId.m4a';
+      return File(newPath).existsSync() || File(oldPath).existsSync();
     } catch (_) {
       return false;
     }
