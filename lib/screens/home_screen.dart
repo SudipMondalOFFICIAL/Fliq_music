@@ -49,14 +49,46 @@ class _HomeScreenState extends State<HomeScreen> {
         const ProfileScreen(),
       ];
 
+  DateTime? _lastBackPress;
+
   @override
   Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: _bg,
-        body: IndexedStack(index: _tab, children: _pages),
-        bottomNavigationBar: _buildBottomNav(),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_tab != 0) {
+          // অন্য tab এ থাকলে home tab এ ফেরো
+          setState(() => _tab = 0);
+          return;
+        }
+        // Home tab এ থাকলে double back press এ exit
+        final now = DateTime.now();
+        if (_lastBackPress == null ||
+            now.difference(_lastBackPress!) > const Duration(seconds: 2)) {
+          _lastBackPress = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Press back again to exit'),
+              duration: const Duration(seconds: 2),
+              backgroundColor: const Color(0xFF1A1A1A),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        } else {
+          // App বন্ধ করো
+          SystemNavigator.pop();
+        }
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Scaffold(
+          backgroundColor: _bg,
+          body: IndexedStack(index: _tab, children: _pages),
+          bottomNavigationBar: _buildBottomNav(),
+        ),
       ),
     );
   }

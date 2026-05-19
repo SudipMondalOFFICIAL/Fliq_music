@@ -1,6 +1,3 @@
-// splash_screen.dart — with Force Update support
-// White background, black "Filq" title, light tagline, single soft scale+fade effect
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -76,9 +73,9 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _start() async {
     try {
       final cfg = context.read<AppConfigProvider>();
-      // timeout: Render cold start বা slow network এ stuck হবে না
+      // FIX: timeout 6s → 4s, server slow হলেও app freeze করবে না
       await cfg.load().timeout(
-            const Duration(seconds: 6),
+            const Duration(seconds: 4),
             onTimeout: () {},
           );
       if (mounted) {
@@ -90,13 +87,13 @@ class _SplashScreenState extends State<SplashScreen>
       }
     } catch (_) {}
 
-    await Future.delayed(const Duration(milliseconds: 180));
-    await _logoCtrl.forward();
     await Future.delayed(const Duration(milliseconds: 100));
-    await _textCtrl.forward();
+    await _logoCtrl.forward();
     await Future.delayed(const Duration(milliseconds: 80));
+    await _textCtrl.forward();
+    await Future.delayed(const Duration(milliseconds: 60));
     _dotCtrl.forward();
-    await Future.delayed(const Duration(milliseconds: 950));
+    await Future.delayed(const Duration(milliseconds: 600));
 
     _navigate();
   }
@@ -149,8 +146,9 @@ class _SplashScreenState extends State<SplashScreen>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => WillPopScope(
-        onWillPop: () async => false, // back button disabled
+      builder: (_) => PopScope(
+        canPop: false,
+        // back button disabled
         child: AlertDialog(
           backgroundColor: Colors.white,
           shape:

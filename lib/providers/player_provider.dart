@@ -295,7 +295,9 @@ class PlayerProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _playerService.player.dispose();
+    // FIX: Do NOT dispose the singleton AudioPlayer here.
+    // PlayerService.instance manages its own lifecycle for the whole app.
+    // Disposing it here would break playback after widget rebuild.
     super.dispose();
   }
 }

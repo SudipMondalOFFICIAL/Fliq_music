@@ -11,7 +11,6 @@ import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'services/upload_service.dart';
 import 'services/notification_service.dart';
-// FIX: import PlayerService for audio background init
 import 'services/player_service.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/earn_provider.dart';
@@ -19,7 +18,6 @@ import 'providers/task_provider.dart';
 import 'providers/support_provider.dart';
 import 'providers/app_config_provider.dart';
 import 'providers/media_provider.dart';
-// FIX: PlayerProvider added
 import 'providers/player_provider.dart';
 
 import 'screens/splash_screen.dart';
@@ -35,12 +33,11 @@ import 'screens/earn_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/media_screen.dart';
-
 import 'screens/leaderboard_screen.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
+  debugPrint('[FCM Background] ${message.notification?.title}');
 }
 
 Future<void> main() async {
@@ -56,18 +53,40 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  await Firebase.initializeApp();
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  // TEMPORARILY DISABLED - Firebase testing
+  // try {
+  //   await Firebase.initializeApp().timeout(
+  //     const Duration(seconds: 10),
+  //     onTimeout: () async {
+  //       debugPrint('[Main] Firebase init timeout — continuing anyway');
+  //       return Firebase.app();
+  //     },
+  //   );
+  //   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  // } catch (e) {
+  //   debugPrint('[Main] Firebase init error: $e — continuing anyway');
+  // }
 
-  // FIX: Removed Workmanager().initialize() — workmanager is NOT in pubspec.yaml
-  // and campaignTrackingDispatcher is undefined. Remove or add the package if needed.
-
-  // FIX: Init audio background for just_audio_background
-  await initAudioBackground();
+  // TEMPORARILY DISABLED - Audio background testing
+  // try {
+  //   await initAudioBackground().timeout(
+  //     const Duration(seconds: 5),
+  //     onTimeout: () {
+  //       debugPrint('[Main] AudioBackground init timeout — continuing anyway');
+  //     },
+  //   );
+  // } catch (e) {
+  //   debugPrint('[Main] AudioBackground init error: $e — continuing anyway');
+  // }
 
   final apiService = ApiService();
   final authService = AuthService(apiService);
-  await authService.init();
+
+  try {
+    await authService.init().timeout(const Duration(seconds: 5));
+  } catch (e) {
+    debugPrint('[Main] AuthService init error: $e');
+  }
 
   runApp(MultiProvider(
     providers: [
@@ -81,7 +100,6 @@ Future<void> main() async {
       ChangeNotifierProvider(create: (_) => SupportProvider(apiService)),
       ChangeNotifierProvider(create: (_) => LeaderboardProvider(apiService)),
       ChangeNotifierProvider(create: (_) => MediaProvider(apiService)),
-      // FIX: PlayerProvider was missing — player features won't work without this
       ChangeNotifierProvider(create: (_) => PlayerProvider()),
     ],
     child: const FilqApp(),
@@ -98,9 +116,10 @@ class _FilqAppState extends State<FilqApp> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      NotificationService.init(context);
-    });
+    // TEMPORARILY DISABLED
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   NotificationService.init(context);
+    // });
   }
 
   @override
