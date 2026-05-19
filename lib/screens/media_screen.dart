@@ -16,8 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:video_player/video_player.dart';
-import 'package:chewie/chewie.dart';
+import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 import '../models/track_model.dart';
 import '../providers/media_provider.dart';
@@ -240,12 +239,10 @@ class VideoPlayerScreen extends StatefulWidget {
 }
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
-  VideoPlayerController? _videoCtrl;
-  ChewieController? _chewieCtrl;
+  YoutubePlayerController? _ytCtrl;
 
   bool _loading = true;
   String? _error;
-  bool _isFullscreen = false;
   bool _autoplay = true;
   bool _showDoubleTapLeft = false;
   bool _showDoubleTapRight = false;
@@ -262,10 +259,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   @override
   void initState() {
     super.initState();
-    _loadVideo(widget.track);
+    _initPlayer(widget.track);
   }
 
-  Future<void> _loadVideo(Track track) async {
+  void _initPlayer(Track track) {
     setState(() {
       _loading = true;
       _error = null;
@@ -273,85 +270,65 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       _coinLogged = false;
     });
 
-    // Dispose previous controllers
-    _chewieCtrl?.dispose();
-    _videoCtrl?.dispose();
+    // Dispose previous
+    _ytCtrl?.dispose();
     _watchTimer?.cancel();
 
+    final videoId = track.ytVideoId;
+    if (videoId.isEmpty) {
+      setState(() {
+        _loading = false;
+        _error = 'Invalid video ID';
+      });
+      return;
+    }
+
     try {
-      final url =
-          await PlayerService.instance.getVideoStreamUrl(track.ytVideoId);
-      if (url == null) throw Exception('Could not get video stream');
-
-      final ctrl = VideoPlayerController.networkUrl(Uri.parse(url));
-      await ctrl.initialize();
-
-      if (!mounted) return;
-
-      final chewie = ChewieController(
-        videoPlayerController: ctrl,
-        autoPlay: true,
-        looping: false,
-        allowFullScreen: true,
-        allowMuting: true,
-        showControls: true,
-        showOptions: false,
-        materialProgressColors: ChewieProgressColors(
-          playedColor: _lime,
-          handleColor: _lime,
-          backgroundColor: Colors.white24,
-          bufferedColor: Colors.white38,
+      _ytCtrl = YoutubePlayerController(
+        initialVideoId: videoId,
+        flags: YoutubePlayerFlags(
+          autoPlay: true,
+          mute: false,
+          disableDragSeek: false,
+          loop: false,
+          isLive: false,
+          forceHD: false,
+          enableCaption: false,
         ),
-        placeholder: Container(color: Colors.black),
-        autoInitialize: true,
-        fullScreenByDefault: false,
-        deviceOrientationsOnEnterFullScreen: [
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ],
-        deviceOrientationsAfterFullScreen: [
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.portraitDown,
-        ],
       );
 
-      setState(() {
-        _videoCtrl = ctrl;
-        _chewieCtrl = chewie;
-        _loading = false;
-      });
+      _ytCtrl!.addListener(_onPlayerStateChange);
+
+      setState(() => _loading = false);
 
       // Watch time tracker for coin earning
       _watchTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (_videoCtrl?.value.isPlaying == true) {
+        if (_ytCtrl?.value.isPlaying == true) {
           _watchedSeconds++;
-          // Log coins after 30s watch
           if (!_coinLogged && _watchedSeconds >= 30) {
             _coinLogged = true;
-            context
-                .read<MediaProvider>()
-                .logWatch(track: track, watchDurationSeconds: _watchedSeconds);
+            context.read<MediaProvider>().logWatch(
+                  track: track,
+                  watchDurationSeconds: _watchedSeconds,
+                );
           }
         }
       });
-
-      // Autoplay next when video ends
-      ctrl.addListener(() {
-        if (ctrl.value.position >=
-                ctrl.value.duration - const Duration(seconds: 1) &&
-            ctrl.value.position > Duration.zero &&
-            !ctrl.value.isPlaying &&
-            _autoplay) {
-          _playNext();
-        }
-      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = 'Could not load video. Please try again.\n$e';
-        });
-      }
+      setState(() {
+        _loading = false;
+        _error = 'Could not load video. Please try again.\n$e';
+      });
+    }
+  }
+
+  void _onPlayerStateChange() {
+    final ctrl = _ytCtrl;
+    if (ctrl == null) return;
+
+    // Autoplay next when video ends
+    if (ctrl.value.playerState == PlayerState.ended && _autoplay) {
+      _playNext();
     }
   }
 
@@ -372,9 +349,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 
   void _seekLeft() {
-    final pos = _videoCtrl?.value.position ?? Duration.zero;
+    final pos = _ytCtrl?.value.position ?? Duration.zero;
     final target = pos - const Duration(seconds: 10);
-    _videoCtrl?.seekTo(target < Duration.zero ? Duration.zero : target);
+    _ytCtrl?.seekTo(target < Duration.zero ? Duration.zero : target);
     setState(() => _showDoubleTapLeft = true);
     _doubleTapTimer?.cancel();
     _doubleTapTimer = Timer(const Duration(milliseconds: 700), () {
@@ -383,10 +360,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   }
 
   void _seekRight() {
-    final pos = _videoCtrl?.value.position ?? Duration.zero;
-    final dur = _videoCtrl?.value.duration ?? Duration.zero;
+    final pos = _ytCtrl?.value.position ?? Duration.zero;
+    final dur = _ytCtrl?.value.metaData.duration ?? Duration.zero;
     final target = pos + const Duration(seconds: 10);
-    _videoCtrl?.seekTo(target > dur ? dur : target);
+    _ytCtrl?.seekTo(target > dur ? dur : target);
     setState(() => _showDoubleTapRight = true);
     _doubleTapTimer?.cancel();
     _doubleTapTimer = Timer(const Duration(milliseconds: 700), () {
@@ -400,12 +377,13 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _doubleTapTimer?.cancel();
     // Log final watch time
     if (_watchedSeconds > 5 && !_coinLogged) {
-      context
-          .read<MediaProvider>()
-          .logWatch(track: widget.track, watchDurationSeconds: _watchedSeconds);
+      context.read<MediaProvider>().logWatch(
+            track: widget.track,
+            watchDurationSeconds: _watchedSeconds,
+          );
     }
-    _chewieCtrl?.dispose();
-    _videoCtrl?.dispose();
+    _ytCtrl?.removeListener(_onPlayerStateChange);
+    _ytCtrl?.dispose();
     // Restore portrait after leaving video screen
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -419,100 +397,109 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   Widget build(BuildContext context) {
     final screenW = MediaQuery.of(context).size.width;
 
-    return Scaffold(
-      backgroundColor: _bg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // ── Video player area ─────────────────────────────
-            _buildVideoArea(screenW),
-
-            // ── Info + controls + suggested (scrollable) ──────
-            Expanded(
-              child: ListView(
-                padding: EdgeInsets.zero,
-                children: [
-                  _buildVideoInfo(),
-                  _buildAutoplayToggle(),
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(14, 8, 14, 6),
-                    child: Text('Up Next',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15)),
-                  ),
-                  ...widget.suggestedTracks.take(10).map((t) => _SuggestedTile(
-                        track: t,
-                        onTap: () {
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => VideoPlayerScreen(
-                                track: t,
-                                suggestedTracks: widget.suggestedTracks
-                                    .where((x) => x.ytVideoId != t.ytVideoId)
-                                    .toList(),
-                              ),
-                            ),
-                          );
-                        },
-                      )),
-                  const SizedBox(height: 32),
-                ],
-              ),
-            ),
-          ],
+    // YoutubePlayer needs to wrap the whole subtree
+    if (_ytCtrl == null) {
+      return Scaffold(
+        backgroundColor: _bg,
+        body: SafeArea(
+          child: Column(children: [
+            _buildErrorOrLoading(screenW),
+            Expanded(child: _buildInfoAndSuggested()),
+          ]),
         ),
+      );
+    }
+
+    return YoutubePlayerBuilder(
+      player: YoutubePlayer(
+        controller: _ytCtrl!,
+        showVideoProgressIndicator: true,
+        progressIndicatorColor: _lime,
+        progressColors: const ProgressBarColors(
+          playedColor: _lime,
+          handleColor: _lime,
+          bufferedColor: Colors.white38,
+          backgroundColor: Colors.white24,
+        ),
+        onReady: () {
+          debugPrint('[YoutubePlayer] ready');
+        },
+        onEnded: (_) {
+          if (_autoplay) _playNext();
+        },
+      ),
+      builder: (context, player) {
+        return Scaffold(
+          backgroundColor: _bg,
+          body: SafeArea(
+            child: Column(
+              children: [
+                // ── Video player area ────────────────────────
+                _buildVideoArea(screenW, player),
+
+                // ── Info + controls + suggested (scrollable) ─
+                Expanded(child: _buildInfoAndSuggested()),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildErrorOrLoading(double screenW) {
+    final videoH = screenW * 9 / 16;
+    return SizedBox(
+      width: screenW,
+      height: videoH,
+      child: Container(
+        color: Colors.black,
+        child: _loading
+            ? const Center(
+                child: CircularProgressIndicator(color: Color(0xFFE8FF6B)))
+            : _error != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error_outline,
+                              color: Colors.red, size: 40),
+                          const SizedBox(height: 10),
+                          Text(_error!,
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 13),
+                              textAlign: TextAlign.center),
+                          const SizedBox(height: 12),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFE8FF6B),
+                                foregroundColor: Colors.black),
+                            onPressed: () => _initPlayer(widget.track),
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
       ),
     );
   }
 
-  Widget _buildVideoArea(double screenW) {
-    final videoH = screenW * 9 / 16; // 16:9
+  Widget _buildVideoArea(double screenW, Widget player) {
+    final videoH = screenW * 9 / 16;
 
     return SizedBox(
       width: screenW,
       height: videoH,
       child: Stack(
         children: [
-          // Background
-          Container(color: Colors.black),
+          // YouTube player
+          player,
 
-          // Video or loading/error
-          if (_loading)
-            const Center(
-                child: CircularProgressIndicator(color: Color(0xFFE8FF6B)))
-          else if (_error != null)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline,
-                        color: Colors.red, size: 40),
-                    const SizedBox(height: 10),
-                    Text(_error!,
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 13),
-                        textAlign: TextAlign.center),
-                    const SizedBox(height: 12),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                          backgroundColor: _lime,
-                          foregroundColor: Colors.black),
-                      onPressed: () => _loadVideo(widget.track),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else if (_chewieCtrl != null)
-            Chewie(controller: _chewieCtrl!),
-
-          // ── Double-tap zones (overlay on top of Chewie) ───────
+          // ── Double-tap zones ──────────────────────────────
           // Left zone — seek -10s
           Positioned(
             left: 0,
@@ -597,6 +584,41 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildInfoAndSuggested() {
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: [
+        _buildVideoInfo(),
+        _buildAutoplayToggle(),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(14, 8, 14, 6),
+          child: Text('Up Next',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15)),
+        ),
+        ...widget.suggestedTracks.take(10).map((t) => _SuggestedTile(
+              track: t,
+              onTap: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => VideoPlayerScreen(
+                      track: t,
+                      suggestedTracks: widget.suggestedTracks
+                          .where((x) => x.ytVideoId != t.ytVideoId)
+                          .toList(),
+                    ),
+                  ),
+                );
+              },
+            )),
+        const SizedBox(height: 32),
+      ],
     );
   }
 

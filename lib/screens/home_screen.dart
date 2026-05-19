@@ -12,6 +12,7 @@ import '../providers/media_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/wallet_provider.dart';
 import 'earn_screen.dart';
+import 'reels_screen.dart';
 import 'referral_screen.dart';
 import 'withdraw_screen.dart';
 import 'profile_screen.dart';
@@ -44,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   List<Widget> get _pages => [
         const _HomeFeedPage(),
-        const EarnScreen(),
+        const ReelsScreen(),
         const ReferEarnScreen(),
         const WithdrawScreen(),
         const ProfileScreen(),
@@ -93,7 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
     const items = [
       BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
       BottomNavigationBarItem(
-          icon: Icon(Icons.play_circle_outline), label: 'Earn'),
+          icon: Icon(Icons.play_circle_fill_rounded), label: 'Reels'),
       BottomNavigationBarItem(
           icon: Icon(Icons.card_giftcard_outlined), label: 'Refer'),
       BottomNavigationBarItem(

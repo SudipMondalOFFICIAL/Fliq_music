@@ -30,6 +30,12 @@ class MediaProvider extends ChangeNotifier {
   bool _likedLoading = false;
   final Set<String> _likedIds = {};
 
+  // ── Shorts / Reels ───────────────────────────────────────────
+  List<Track> _shortsResults = [];
+  bool _shortsLoading = false;
+  bool _shortsHasMore = true;
+  int _shortsPage = 1;
+
   // ── Watch coins ──────────────────────────────────────────────
   int _dailyWatchEarned = 0;
   int _dailyWatchLimit = 50;
@@ -53,6 +59,10 @@ class MediaProvider extends ChangeNotifier {
   int get dailyWatchEarned => _dailyWatchEarned;
   int get dailyWatchLimit => _dailyWatchLimit;
   String? get error => _error;
+
+  List<Track> get shortsResults => _shortsResults;
+  bool get shortsLoading => _shortsLoading;
+  bool get shortsHasMore => _shortsHasMore;
 
   bool isLiked(String ytVideoId) => _likedIds.contains(ytVideoId);
 
@@ -192,6 +202,48 @@ class MediaProvider extends ChangeNotifier {
     } catch (_) {
       return 0;
     }
+  }
+
+  // ── Shorts / Reels ─────────────────────────────────────────
+  Future<void> searchShorts({bool refresh = false}) async {
+    if (_shortsLoading) return;
+    if (refresh) {
+      _shortsResults = [];
+      _shortsPage = 1;
+      _shortsHasMore = true;
+    }
+    _shortsLoading = true;
+    notifyListeners();
+    try {
+      // YouTube Shorts search — vertical short videos (< 60s usually)
+      final queries = [
+        'youtube shorts',
+        'shorts trending india',
+        'viral shorts 2024',
+      ];
+      final q = queries[(_shortsPage - 1) % queries.length];
+      final results = await _api.searchMusic(q: q, type: 'any', maxResults: 20);
+      // Filter for shorter videos (shorts are typically < 65 seconds)
+      // If duration is 0 (unknown), include it — might be a short
+      final shorts = results
+          .where((t) => t.durationSeconds == 0 || t.durationSeconds <= 65)
+          .toList();
+      final allResults = shorts.isNotEmpty ? shorts : results.take(10).toList();
+      _shortsResults =
+          refresh ? allResults : [..._shortsResults, ...allResults];
+      _shortsHasMore = allResults.length >= 10;
+      _shortsPage++;
+    } catch (e) {
+      _error = e.toString().replaceAll('Exception: ', '');
+    } finally {
+      _shortsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loadMoreShorts() async {
+    if (!_shortsHasMore || _shortsLoading) return;
+    await searchShorts();
   }
 
   void clearError() {

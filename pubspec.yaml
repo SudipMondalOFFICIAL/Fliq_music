@@ -45,15 +45,18 @@ dependencies:
   html: ^0.15.4
 
   # ── Video / Audio Player ──────────────────────────────────────
-  # YouTube stream extract (no API key needed for playback)
-  youtube_explode_dart: ^2.3.0
+  # YouTube IFrame player — works reliably without stream extraction
+  youtube_player_flutter: ^9.1.1
 
   # Audio playback + background play
   just_audio: ^0.9.40
   just_audio_background: ^0.0.1-beta.13
   audio_service: ^0.18.15
 
-  # Video playback
+  # youtube_explode_dart kept for audio-only stream extraction
+  youtube_explode_dart: ^2.3.0
+
+  # Video playback (kept for non-YouTube local/direct URL videos)
   video_player: ^2.9.1
   chewie: ^1.8.5
 
