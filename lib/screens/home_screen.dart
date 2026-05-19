@@ -16,6 +16,8 @@ import 'referral_screen.dart';
 import 'withdraw_screen.dart';
 import 'profile_screen.dart';
 import 'media_screen.dart';
+import 'search_screen.dart';
+import 'notification_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -134,11 +136,7 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
   static const _border = Color(0xFF1E1E1E);
   static const _card = Color(0xFF141414);
 
-  final _searchCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
-  final _focusNode = FocusNode();
-  bool _searchActive = false;
-  Timer? _debounce;
 
   final _categories = ['All', '🎵 Music', '🎮 Gaming', '📰 News', '⚽ Sports'];
   int _selectedCat = 0;
@@ -150,40 +148,15 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
       final mp = context.read<MediaProvider>();
       if (_scrollCtrl.position.pixels >=
           _scrollCtrl.position.maxScrollExtent - 300) {
-        if (!_searchActive) mp.loadMoreFeed();
+        mp.loadMoreFeed();
       }
-    });
-    _focusNode.addListener(() {
-      setState(() => _searchActive = _focusNode.hasFocus);
     });
   }
 
   @override
   void dispose() {
-    _searchCtrl.dispose();
     _scrollCtrl.dispose();
-    _focusNode.dispose();
-    _debounce?.cancel();
     super.dispose();
-  }
-
-  void _onSearchChanged(String q) {
-    setState(() {}); // update suffix icon
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), () {
-      if (q.trim().isNotEmpty) {
-        context.read<MediaProvider>().search(q.trim(), type: 'any');
-      } else {
-        context.read<MediaProvider>().clearSearch();
-      }
-    });
-  }
-
-  void _clearSearch() {
-    _searchCtrl.clear();
-    _focusNode.unfocus();
-    context.read<MediaProvider>().clearSearch();
-    setState(() => _searchActive = false);
   }
 
   void _openPlayer(Track track) {
@@ -212,7 +185,7 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
             child: Column(children: [
               // App bar row
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
                 child: Row(children: [
                   Row(children: [
                     Container(
@@ -257,68 +230,52 @@ class _HomeFeedPageState extends State<_HomeFeedPage> {
                       ]),
                     ),
                   ),
-                ]),
-              ),
-
-              const SizedBox(height: 12),
-
-              // ── Search Bar ──────────────────────────────────────
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(children: [
-                  Expanded(
-                    child: Container(
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: _card,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color:
-                              _searchActive ? _lime.withOpacity(0.5) : _border,
-                        ),
-                      ),
-                      child: TextField(
-                        controller: _searchCtrl,
-                        focusNode: _focusNode,
-                        onChanged: _onSearchChanged,
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText: 'Search songs, videos, channels...',
-                          hintStyle: const TextStyle(
-                              color: Color(0xFF444444), fontSize: 13),
-                          prefixIcon: const Icon(Icons.search_rounded,
-                              color: Color(0xFF555555), size: 20),
-                          suffixIcon: _searchCtrl.text.isNotEmpty
-                              ? GestureDetector(
-                                  onTap: _clearSearch,
-                                  child: const Icon(Icons.close_rounded,
-                                      color: Color(0xFF555555), size: 18),
-                                )
-                              : null,
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 14),
-                        ),
-                      ),
+                  const SizedBox(width: 4),
+                  // Search icon
+                  IconButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const SearchScreen()),
                     ),
+                    icon: const Icon(Icons.search_rounded,
+                        color: Colors.white, size: 25),
+                    splashRadius: 22,
                   ),
-                  if (_searchActive) ...[
-                    const SizedBox(width: 10),
-                    GestureDetector(
-                      onTap: _clearSearch,
-                      child: const Text('Cancel',
-                          style: TextStyle(
-                              color: _lime,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600)),
+                  // Notification icon
+                  IconButton(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const NotificationScreen()),
                     ),
-                  ],
+                    icon: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Icon(Icons.notifications_outlined,
+                            color: Colors.white, size: 25),
+                        Positioned(
+                          top: -2,
+                          right: -2,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: _lime,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    splashRadius: 22,
+                  ),
                 ]),
               ),
+
+              const SizedBox(height: 6),
 
               // ── Category chips ──────────────────────────────────
-              if (!_searchActive) ...[
                 const SizedBox(height: 10),
                 SizedBox(
                   height: 34,

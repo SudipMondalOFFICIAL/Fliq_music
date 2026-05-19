@@ -15,7 +15,8 @@ import '../models/track_model.dart';
 import '../providers/media_provider.dart';
 
 class ReelsScreen extends StatefulWidget {
-  const ReelsScreen({Key? key}) : super(key: key);
+  final bool isActive;
+  const ReelsScreen({Key? key, this.isActive = true}) : super(key: key);
 
   @override
   State<ReelsScreen> createState() => _ReelsScreenState();
@@ -42,6 +43,15 @@ class _ReelsScreenState extends State<ReelsScreen> {
   void dispose() {
     _pageCtrl.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(ReelsScreen old) {
+    super.didUpdateWidget(old);
+    // অন্য tab এ গেলে isActive false হবে → current reel pause করো
+    if (!widget.isActive && old.isActive) {
+      setState(() {}); // _ReelItem isActive false পাবে rebuild এ
+    }
   }
 
   Future<void> _loadShorts({bool refresh = false}) async {
@@ -116,7 +126,7 @@ class _ReelsScreenState extends State<ReelsScreen> {
                         itemBuilder: (_, i) => _ReelItem(
                           key: ValueKey(_reels[i].ytVideoId),
                           track: _reels[i],
-                          isActive: i == _currentIndex,
+                          isActive: i == _currentIndex && widget.isActive,
                           onLike: () => context
                               .read<MediaProvider>()
                               .toggleLike(_reels[i].ytVideoId),
@@ -244,7 +254,6 @@ class _ReelItemState extends State<_ReelItem> {
   YoutubePlayerController? _ctrl;
   bool _ready = false;
   bool _isPaused = false; // FIX: tap-to-pause state
-
   // FIX: coin badge এ actual earned amount দেখাবে, hardcoded '+2' না
   int _coinBadgeAmount = 0;
   bool _showCoinBadge = false;

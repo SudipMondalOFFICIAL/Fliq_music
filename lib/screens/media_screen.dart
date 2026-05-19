@@ -83,9 +83,9 @@ class _MediaScreenState extends State<MediaScreen>
       _playerVisible = true;
     });
     context.read<PlayerProvider>().playTrack(
-      track,
-      downloads: context.read<DownloadProvider>(),
-    );
+          track,
+          downloads: context.read<DownloadProvider>(),
+        );
   }
 
   List<Track> _getSuggested(Track track) {
@@ -243,7 +243,8 @@ class VideoPlayerScreen extends StatefulWidget {
   State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
 }
 
-class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
+class _VideoPlayerScreenState extends State<VideoPlayerScreen>
+    with WidgetsBindingObserver {
   YoutubePlayerController? _ytCtrl;
 
   bool _loading = true;
@@ -252,6 +253,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   bool _showDoubleTapLeft = false;
   bool _showDoubleTapRight = false;
   Timer? _doubleTapTimer;
+
+  // Background audio: screen-off / minimize এ just_audio দিয়ে চলবে
+  bool _backgroundAudioActive = false;
 
   // FIX: Fullscreen state tracking
   bool _isFullscreen = false;
@@ -274,7 +278,44 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initPlayer(widget.track);
+  }
+
+  // ── App lifecycle: screen off / minimize → background audio ──────
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // App background গেছে — YouTube WebView pause হবে।
+      // just_audio দিয়ে audio stream চালু রাখো।
+      _activateBackgroundAudio();
+    } else if (state == AppLifecycleState.resumed) {
+      // App foreground এ ফিরলে background audio বন্ধ, YouTube আবার চালু।
+      _deactivateBackgroundAudio();
+    }
+  }
+
+  Future<void> _activateBackgroundAudio() async {
+    if (_backgroundAudioActive) return;
+    final track = widget.track;
+    if (track.ytVideoId.isEmpty) return;
+    _backgroundAudioActive = true;
+    // YouTube player pause করো (background এ এমনিই হবে, explicit করা better)
+    _ytCtrl?.pause();
+    // just_audio দিয়ে audio-only stream চালু করো
+    final playerProvider = Provider.of<PlayerProvider>(context, listen: false);
+    await playerProvider.playTrack(track);
+  }
+
+  Future<void> _deactivateBackgroundAudio() async {
+    if (!_backgroundAudioActive) return;
+    _backgroundAudioActive = false;
+    // Background audio বন্ধ করো
+    final playerProvider = Provider.of<PlayerProvider>(context, listen: false);
+    await playerProvider.togglePlayPause(); // pause করবে
+    // YouTube player আবার চালু করো — seek করে position মেলাও
+    _ytCtrl?.play();
   }
 
   void _initPlayer(Track track) {
@@ -465,6 +506,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _watchTimer?.cancel();
     _doubleTapTimer?.cancel();
     // Log final watch time
@@ -929,7 +971,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               GestureDetector(
                 onTap: () => mp.toggleLike(widget.track.ytVideoId),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
                     color: mp.isLiked(widget.track.ytVideoId)
                         ? Colors.red.withOpacity(0.15)
@@ -976,7 +1019,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                             dl.downloadVideo(widget.track);
                           },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
                     color: ds.isVideoDownloaded
                         ? Colors.green.withOpacity(0.15)
