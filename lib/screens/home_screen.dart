@@ -94,7 +94,7 @@ class _HomeScreenState extends State<HomeScreen> {
     const items = [
       BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
       BottomNavigationBarItem(
-          icon: Icon(Icons.play_circle_fill_rounded), label: 'Reels'),
+          icon: Icon(Icons.music_note_rounded), label: 'Music'),
       BottomNavigationBarItem(
           icon: Icon(Icons.card_giftcard_outlined), label: 'Refer'),
       BottomNavigationBarItem(
